@@ -38,7 +38,6 @@ def find_summary_files(directory: str) -> List[Dict[str, Any]]:
     for root, dirs, files in os.walk(directory):
         # Check for summary_confidences.json files
         summary_files = [f for f in files if f.endswith('_summary_confidences.json')]
-        print(len(summary_files))
         
         if summary_files:
             for summary_file in summary_files:
@@ -78,7 +77,6 @@ def remove_0(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
     """
     df[cols] = df[df[cols] > 0][cols]
     return df.dropna()
-
 
 def print_statistics(pairs: pd.DataFrame, results: pd.DataFrame, boxplot: bool = False, description: str = '') -> Dict[str, Dict[str, float]]:
     """Print important statistics for a dataset of protein pairs.
@@ -157,7 +155,7 @@ def print_statistics(pairs: pd.DataFrame, results: pd.DataFrame, boxplot: bool =
             labels.append(metric.upper())
         
         # Create boxplot
-        box = plt.boxplot(plot_data, patch_artist=True, labels=labels)
+        box = plt.boxplot(plot_data, patch_artist=True, label=labels)
         
         # Add colors to boxplots
         colors = ['lightblue', 'lightgreen', 'pink']
@@ -299,7 +297,7 @@ def compare_statistics(pairs1: pd.DataFrame, pairs2: pd.DataFrame, results: pd.D
     fig.text(0.05, 0.95, f"{label1}: {len(merged_df1)} pairs\n{label2}: {len(merged_df2)} pairs", 
              bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
     
-    plt.tight_layout(rect=[0, 0, 1, 0.96])  # Adjust layout to make room for subtitle
+    plt.tight_layout(rect=(0, 0, 1, 0.96))  # Adjust layout to make room for subtitle
     plt.show()
     
     return stats1, stats2
