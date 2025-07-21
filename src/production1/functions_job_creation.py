@@ -364,9 +364,11 @@ def create_job_batch_id_list(pair_df: pd.DataFrame, id_list: List[Tuple[str, str
         row_matches = pair_df[((pair_df['Entry_arm'] == id_1) & (pair_df['Entry_tf'] == id_2)) | 
                               ((pair_df['Entry_arm'] == id_2) & (pair_df['Entry_tf'] == id_1))]
         if len(row_matches) == 0:
-            raise Exception(f"No matching row found for pair ({id_1}, {id_2}) in pair_df.")
+            print(f"No matching row found for pair ({id_1}, {id_2}) in pair_df.")
+            continue
         elif len(row_matches) > 1:
-            raise Exception(f"Multiple matching rows found for pair ({id_1}, {id_2}) in pair_df.")
+            print(f"Multiple matching rows found for pair ({id_1}, {id_2}) in pair_df.")
+            continue
         
         row = row_matches.iloc[0]
         armadillo_entry = row['Entry_arm']
@@ -395,6 +397,8 @@ def create_job_batch_id_list(pair_df: pd.DataFrame, id_list: List[Tuple[str, str
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
             new_jobs.append(job)
+        else:
+            print(f"Duplicate job found for pair ({id_1}, {id_2})")
         
     # Print the number of jobs created in each category
     print(f"Created {len(new_jobs)} new jobs total.")
