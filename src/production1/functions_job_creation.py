@@ -6,7 +6,7 @@ import math
 import copy
 import random
 
-def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str) -> None:
+def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
     """Write each AlphaFold job to an individual file.
     
     Each job is saved as a JSON file in the specified output directory with the job's name as the filename.
@@ -30,7 +30,12 @@ def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir:
         file_name = f"{job['name']}.json"
         file_path = os.path.join(output_dir, file_name)
         with open(file_path, 'w') as f:
-            json.dump([job], f, indent=2)  # use [] so AF parser knows it's in alphafoldserver dialect
+            if dialect == 'alphafoldserver':
+                json.dump([job], f, indent=2)  # use [] so AF parser knows it's in alphafoldserver dialect
+            elif dialect == 'alphafold3':
+                json.dump(job, f, indent=2)
+            else:
+                raise Exception('Incorrect dialect.')
 
 def sort_rec(obj: Union[List[Any], Dict[str, Any], Any]) -> Any:
     """Sort a list or dictionary recursively.
@@ -100,39 +105,65 @@ def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
                 continue
     return collected_jobs
 
-def create_alphafold_job(job_name: str, sequence1: str, sequence2: str, dialect: str = 'alphafoldserver') -> Dict[str, Any]:
+def create_alphafold_job(job_name: str, sequence1: str, sequence2: str, dialect: str = 'alphafold3', seed: int = 3030452494) -> Dict[str, Any]:
     """Create a standardized AlphaFold job dictionary from input parameters.
 
     Args:
         job_name (str): Name of the job, typically in the format "protein1_start-end_protein2_start-end"
         sequence1 (str): Amino acid sequence of the first protein
         sequence2 (str): Amino acid sequence of the second protein
-        dialect (str, optional): The dialect to use for AlphaFold. Defaults to 'alphafoldserver'.
+        dialect (str, optional): The dialect to use for AlphaFold. Defaults to 'alphafold3'.
 
     Returns:
         Dict[str, Any]: A dictionary representing the AlphaFold job in the specified format
     """
-    job = {
-        'name': job_name,
-        'modelSeeds': [],
-        'sequences': [
-            {
-                'proteinChain': {
-                    'sequence': sequence1,
-                    'count': 1
+    if dialect == 'alphafoldserver':
+        return {
+            'name': job_name,
+            'modelSeeds': [],
+            'sequences': [
+                {
+                    'proteinChain': {
+                        'sequence': sequence1,
+                        'count': 1
+                    }
+                },
+                {
+                    'proteinChain': {
+                        'sequence': sequence2,
+                        'count': 1
+                    }
                 }
-            },
-            {
-                'proteinChain': {
-                    'sequence': sequence2,
-                    'count': 1
+            ],
+            'dialect': 'alphafoldserver',
+            'version': 1,
+        }
+    elif dialect == 'alphafold3':
+        return {
+            'name': job_name,
+            'modelSeeds': [seed],
+            'sequences': [
+                {
+                    'protein': {
+                        'id': 'A',
+                        'sequence': sequence1,
+                        'modifications': []
+                    }
+                },
+                {
+                    'protein': {
+                        'id': 'B',
+                        'sequence': sequence2,
+                        'modifications': []
+                    }
                 }
-            }
-        ],
-        'dialect': dialect,
-        'version': 1,
-    }
-    return job
+            ],
+            'dialect': 'alphafold3',
+            'version': 1
+        }
+    else:
+        raise Exception("Incorrect dialect. Use 'alphafoldserver' or 'alphafold3'.")
+        
 
 def create_job_batch_scoreCategories(pair_df: pd.DataFrame, batch_size: int, categories: List[Tuple[float, float]], 
                                 job_dirs: List[str], column_name: str, token_limit: int = 5120) -> List[Dict[str, Any]]:
