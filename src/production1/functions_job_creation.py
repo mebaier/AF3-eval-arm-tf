@@ -435,3 +435,39 @@ def create_job_batch_id_list(pair_df: pd.DataFrame, id_list: List[Tuple[str, str
     print(f"Created {len(new_jobs)} new jobs total.")
     
     return new_jobs
+
+def rewrite_af_job(af_job: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert an AlphaFold job from alphafoldserver dialect to alphafold3 dialect.
+    
+    This function takes an AlphaFold job in alphafoldserver format and converts it to
+    alphafold3 format using the create_alphafold_job helper function.
+    
+    Args:
+        af_job (Dict[str, Any]): AlphaFold job dictionary in alphafoldserver dialect
+        
+    Returns:
+        Dict[str, Any]: AlphaFold job dictionary in alphafold3 dialect
+        
+    Raises:
+        KeyError: If required fields are missing from the input job
+        ValueError: If the job doesn't have exactly 2 protein sequences
+        Exception: If the input job is not in alphafoldserver dialect
+    """
+    # Validate input dialect
+    if af_job.get('dialect') != 'alphafoldserver':
+        raise Exception(f"Input job must be in 'alphafoldserver' dialect, got '{af_job.get('dialect')}'")
+    
+    # Extract job name
+    job_name = af_job['name']
+    
+    # Extract sequences - expecting exactly 2 protein chains
+    sequences = af_job['sequences']
+    if len(sequences) != 2:
+        raise ValueError(f"Expected exactly 2 protein sequences, got {len(sequences)}")
+    
+    # Extract the two protein sequences
+    sequence1 = sequences[0]['proteinChain']['sequence']
+    sequence2 = sequences[1]['proteinChain']['sequence']
+    
+    # Create new job in alphafold3 dialect
+    return create_alphafold_job(job_name, sequence1, sequence2, dialect='alphafold3')
