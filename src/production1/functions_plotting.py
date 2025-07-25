@@ -90,9 +90,25 @@ def create_scatter_plot(df: pd.DataFrame, x_metric: str, y_metric: str,
     else:
         show_plot = False
     
+    # Filter out rows with missing values in either metric
+    valid_data = df[[x_metric, y_metric]].dropna()
+    
+    # Check if we have any valid data left
+    if len(valid_data) == 0:
+        ax.text(0.5, 0.5, f'No valid data points found.\nAll values missing for {x_metric} or {y_metric}', 
+                ha='center', va='center', transform=ax.transAxes, fontsize=12, 
+                bbox=dict(boxstyle="round,pad=0.5", fc="yellow", alpha=0.7))
+        if title == '':
+            title = f'{y_metric} vs {x_metric} (No Data)'
+        ax.set_title(title, fontsize=12)
+        if show_plot:
+            plt.tight_layout()
+            plt.show()
+        return
+    
     scatter = ax.scatter(
-        x=df[x_metric], 
-        y=df[y_metric], 
+        x=valid_data[x_metric], 
+        y=valid_data[y_metric], 
         alpha=alpha,
         s=size,
         edgecolors='w'  # White edge to make points stand out
@@ -109,9 +125,15 @@ def create_scatter_plot(df: pd.DataFrame, x_metric: str, y_metric: str,
     # Add a grid for better readability
     ax.grid(True, linestyle='--', alpha=0.7)
 
-    # Add number of datapoints as a text box in the upper left corner
-    num_points = len(df)
-    ax.annotate(f'Datapoints: {num_points}', xy=(0.05, 0.95), xycoords='axes fraction', 
+    # Add number of valid datapoints as a text box in the upper left corner
+    num_valid_points = len(valid_data)
+    num_total_points = len(df)
+    if num_valid_points == num_total_points:
+        annotation_text = f'Datapoints: {num_valid_points}'
+    else:
+        annotation_text = f'Datapoints: {num_valid_points}/{num_total_points} (valid/total)'
+    
+    ax.annotate(annotation_text, xy=(0.05, 0.95), xycoords='axes fraction', 
                 fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
 
     # Show plot only if not using subplots
