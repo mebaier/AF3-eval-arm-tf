@@ -66,3 +66,36 @@ def clean_IntAct(intact_df: pd.DataFrame) -> pd.DataFrame:
     # deduplciation
     intact_cleaned = intact_cleaned.sort_values('intact_score', ascending=False).drop_duplicates('pair_id', keep='first')
     return intact_cleaned
+
+def read_clean_intact(path: str) -> pd.DataFrame:
+    """read in the Intact dataframe and clean it using caching
+    look if for the given path a file with .cleaned exists. If yes, load it.
+    Else, load the file at the specified path and clean it.
+
+    Args:
+        path (str): Path to the IntAct data file
+        
+    Returns:
+        pd.DataFrame: Cleaned IntAct dataframe
+    """
+    import os
+    
+    # Check if cleaned cache file exists
+    cached_path = path + '.cleaned'
+    
+    if os.path.exists(cached_path):
+        print(f"Loading cached cleaned data from {cached_path}")
+        return pd.read_csv(cached_path, sep='\t')
+    else:
+        print(f"Loading and cleaning data from {path}")
+        # Load the original file
+        intact_df = pd.read_csv(path, sep='\t')
+        
+        # Clean the data using the existing function
+        intact_cleaned = clean_IntAct(intact_df)
+        
+        # Save the cleaned data for future use
+        intact_cleaned.to_csv(cached_path, sep='\t', index=False)
+        print(f"Cached cleaned data saved to {cached_path}")
+        
+        return intact_cleaned
