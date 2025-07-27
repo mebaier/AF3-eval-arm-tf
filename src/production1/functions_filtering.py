@@ -1,6 +1,7 @@
 import pandas as pd
 from typing import List, Tuple, Any
-import os, hashlib
+import os, hashlib, itertools
+from pathlib import Path
 
 def create_all_pairs(arm_df: pd.DataFrame, tf_df: pd.DataFrame) -> pd.DataFrame:
     """Create a dataframe with all possible pairs from the cartesian product of the two dataframes arm_df and tf_df.
@@ -131,6 +132,7 @@ def add_iupred3(df: pd.DataFrame, type, smoothing, cache_dir, threshold, min_len
     import iupred3_lib
     
     os.makedirs(cache_dir, exist_ok=True)
+    df['iupred3'] = None
     
     for ind, row in df.iterrows():
         seq = row['Sequence']
@@ -146,6 +148,131 @@ def add_iupred3(df: pd.DataFrame, type, smoothing, cache_dir, threshold, min_len
             with open(cache_file, 'w') as f:
                 f.write(iupred3_str)
         num_disordered_regions = len(find_subranges(iupred3, threshold, min_length_region))
-        df.at[ind, 'iupred3'] = iupred3
+        df.at[ind, 'iupred3'] = iupred3_str
         df.at[ind, 'num_disordered_regions'] = num_disordered_regions
     return df
+
+
+
+def get_job_name(id_tf: str, id_arm: str, df: pd.DataFrame):
+    row_arm = df[df['Entry'] == id_arm]
+    if row_arm.empty:
+        raise Exception(f"Not found in df: {id_arm}")
+    row_tf = df[df['Entry'] == id_tf]
+    if row_tf.empty:
+        raise Exception(f"Not found in df: {id_tf}")
+    length_arm = row_arm['Length'].iloc[0]
+    length_tf = row_tf['Length'].iloc[0]
+    return str.lower(f"{id_arm}_1-{length_arm}_{id_tf}_1-{length_tf}")
+
+def get_all_chain_mappings(native_chains, model_chains) -> List:
+    all_mappings = []
+    
+    if len(native_chains) > len(model_chains):
+        all_subsets = itertools.combinations(native_chains, len(model_chains))
+        for subset in all_subsets:
+            all_mappings.extend(all_bijective_mappings(subset, model_chains))
+    elif len(model_chains) > len(native_chains):
+        all_subsets = itertools.combinations(model_chains, len(native_chains))
+        for subset in all_subsets:
+            all_mappings.extend(all_bijective_mappings(native_chains, subset))
+    else:
+        all_mappings = all_bijective_mappings(native_chains, model_chains)
+    return all_mappings
+
+def all_bijective_mappings(A, B):
+    """
+    Return a list containing every dictionary that maps each element of A
+    to a unique element of B.  A and B must be the same length.
+    """
+
+    # For each permutation of B, zip it with A to make a mapping dict
+    return [dict(zip(A, perm)) for perm in itertools.permutations(B)]
+
+def get_file_path(filename: str, search_dir: str):
+    """search the file with filename in dir and return the full path if it exists, otherwise return False
+
+    Args:
+        filename (str): _description_
+    """
+    path = Path(search_dir)
+    for file in path.rglob(filename):
+        return file  # return the first match
+    return False
+
+def calculate_dockq_scores(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str, 
+                          all_uniprot: pd.DataFrame) -> pd.DataFrame:
+    """Calculate DockQ scores for protein structures and append results to dataframe.
+    
+    This function calculates DockQ scores for all structures in the input dataframe by comparing
+    predicted models with native PDB structures using all possible chain mappings.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing structure information with columns 'query_tf', 'query_arm', 'pdb_id'
+        native_path_prefix (str): Path prefix for native PDB structure files
+        model_results_dir (str): Directory containing predicted model files
+        all_uniprot (pd.DataFrame): UniProt dataframe for getting job names
+        
+    Returns:
+        pd.DataFrame: Input dataframe with added 'chain_map' and 'dockq_score' columns
+    """
+    from DockQ.DockQ import load_PDB, run_on_all_native_interfaces
+    
+    # Create copies to avoid modifying the original dataframe
+    result_df = df.copy()
+    result_df['chain_map'] = None
+    result_df['dockq_score'] = None
+    
+    no_model = []
+    no_native = []
+    
+    # Process each structure
+    for index, row in result_df.iterrows():
+        job_name = get_job_name(row['query_tf'].split('|')[0], row['query_arm'].split('|')[0], all_uniprot)
+        model_path = get_file_path(f'{job_name}_model.cif', model_results_dir)
+        native_path_cif = f'{native_path_prefix}{row["pdb_id"].lower()}.cif'
+        
+        # Check if both paths exist before loading
+        if not model_path:
+            no_model.append((model_path, job_name))
+            continue
+
+        if not os.path.exists(native_path_cif):
+            no_native.append((native_path_cif, job_name))
+            continue
+        
+        model = load_PDB(model_path)
+        native = load_PDB(native_path_cif)
+        native_chains = [chain.id for chain in model]
+        model_chains = [chain.id for chain in native]
+        chain_map_dict = {}
+        
+        if len(model_chains) > 2:
+            print(f"{row['pdb_id']}: Warning: Native structure ({native}) has more than two chains!")
+            
+        for chain_map in get_all_chain_mappings(model_chains, native_chains):
+            try:
+                dockQ = run_on_all_native_interfaces(model, native, chain_map=chain_map)[1]
+            except Exception as e:
+                print(f"Exception for {row['pdb_id']}: {e}. Comment in review: {row['comment']}")
+                break
+            chain_map_dict[str(chain_map)] = dockQ
+            
+        if chain_map_dict:
+            best_chain_map = max(chain_map_dict.keys(), key=(lambda key: chain_map_dict[key]))
+            best_dockq_score = chain_map_dict[best_chain_map]
+            
+            # Store results in the DataFrame
+            result_df.at[index, 'chain_map'] = best_chain_map
+            result_df.at[index, 'dockq_score'] = best_dockq_score
+
+    # Report missing files
+    if no_model:
+        print("Missing model files:")
+        print(str([(t[0], t[1]) for t in no_model]))
+    if no_native:
+        print("Missing native files:")
+        for path in no_native:
+            print(f"  NATIVE: {path}")
+    
+    return result_df
