@@ -5,10 +5,10 @@ from pathlib import Path
 def clean_blastp_out(df: pd.DataFrame, identity_cutoff :int|bool=False, score_cutoff :int|bool=False, evalue_cutoff :float|bool = False, coverage_cutoff:float|bool=False) -> pd.DataFrame:
     """
     Clean and filter BLAST output DataFrame.
-    
+
     Args:
         df: Raw BLAST output DataFrame
-        
+
     Returns:
         Filtered and cleaned DataFrame with additional columns for PDB ID and chain
     """
@@ -33,17 +33,17 @@ def clean_blastp_out(df: pd.DataFrame, identity_cutoff :int|bool=False, score_cu
 def read_blast_to_df(output_dir: str, column_names: List[str]) -> pd.DataFrame:
     """
     Read BLAST output files from a directory and combine them into a single DataFrame.
-    
+
     Args:
         output_dir: Directory containing BLAST output files
         column_names: List of column names for the DataFrame
-        
+
     Returns:
         Combined and cleaned DataFrame with all BLAST results
     """
     output_files: List[Path] = list(Path(output_dir).glob('*_blastp.out'))
     output_list: List[List[str]] = []
-    
+
     for output_file in output_files:
         try:
             with open(output_file, 'r') as f:
@@ -52,12 +52,12 @@ def read_blast_to_df(output_dir: str, column_names: List[str]) -> pd.DataFrame:
         except IOError as e:
             print(f"Error reading file {output_file}: {e}")
             continue
-    
+
     # Flatten the list of lines and split by tab to create rows
     rows: List[List[str]] = [line.strip().split('\t') for file_lines in output_list for line in file_lines if line.strip()]
-    
+
     if not rows:
         print(f"Warning: No data found in {output_dir}")
         return pd.DataFrame(columns=column_names)
-    
+
     return pd.DataFrame(rows, columns=column_names)

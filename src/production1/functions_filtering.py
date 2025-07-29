@@ -5,7 +5,7 @@ from pathlib import Path
 
 def create_all_pairs(arm_df: pd.DataFrame, tf_df: pd.DataFrame) -> pd.DataFrame:
     """Create a dataframe with all possible pairs from the cartesian product of the two dataframes arm_df and tf_df.
-    
+
     This function performs a full cartesian join between the armadillo proteins dataframe and the transcription factor proteins
     dataframe, generating all possible combinations between them.
 
@@ -20,21 +20,21 @@ def create_all_pairs(arm_df: pd.DataFrame, tf_df: pd.DataFrame) -> pd.DataFrame:
     # Create a key for cross join
     arm_df_temp = arm_df.copy()
     tf_df_temp = tf_df.copy()
-    
+
     arm_df_temp['key'] = 1
     tf_df_temp['key'] = 1
-    
+
     # Perform a cross join using the dummy key
     pairs_df = pd.merge(arm_df_temp, tf_df_temp, on='key', suffixes=('_arm', '_tf'))
-    
+
     # Drop the dummy key column
     pairs_df = pairs_df.drop('key', axis=1)
-    
+
     # Create pair_id column for consistency with other functions in the pipeline
     pairs_df['pair_id'] = pairs_df.apply(lambda row: str(tuple(sorted([row['Entry_arm'].upper(), row['Entry_tf'].upper()]))), axis=1)
-    
+
     print(f"Created {len(pairs_df)} possible protein pairs between {len(arm_df)} armadillo proteins and {len(tf_df)} transcription factors")
-    
+
     return pairs_df
 
 def find_subranges(data: List[float], threshold: float, min_length: int) -> List[Tuple[int, int]]:
@@ -61,7 +61,7 @@ def find_subranges(data: List[float], threshold: float, min_length: int) -> List
                 if i - start >= min_length:
                     subranges.append((start, i - 1))
                 start = None
-    
+
     # Check if we ended with an ongoing subrange
     if start is not None:
         if len(data) - start >= min_length:
@@ -93,19 +93,19 @@ def contains_any_annotation(cell_value: Any, annotations_list: List[str]) -> boo
 
 def print_to_fasta(id: str, seq: str, path: str, comment: str = '') -> None:
     """Create a FASTA file with the given ID and sequence.
-    
+
     This function creates a new FASTA file with the specified ID as the filename
     (with .fasta extension) and writes the sequence in standard FASTA format.
-    
+
     Args:
         id (str): Protein ID to use as both the filename and the FASTA header
         seq (str): Amino acid sequence to write to the file
         path (str): Directory path where the FASTA file should be created
         comment (str, optional): Optional comment to add to the FASTA header. Defaults to ''.
-        
+
     Returns:
         None
-        
+
     Raises:
         OSError: If the directory cannot be created or file cannot be written
     """
