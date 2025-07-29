@@ -168,6 +168,42 @@ def create_alphafold_job(job_name: str, sequence1: str, sequence2: str, dialect:
     else:
         raise Exception("Incorrect dialect. Use 'alphafoldserver' or 'alphafold3'.")
         
+def create_alphafold_job_ms(job_name: str, sequences: List[Dict[str, str]], seed: int = 3030452494) -> Dict[str, Any]:
+    """Create an AlphaFold job from PDB sequence data.
+
+    Args:
+        job_name (str): Name of the job
+        sequences (List[Dict[str, str]]): List of sequence dictionaries from download_pdb_sequence()
+                                         Each dict has 'chain_id' and 'sequence' keys
+        seed (int, optional): Model seed. Defaults to 3030452494.
+
+    Returns:
+        Dict[str, Any]: AlphaFold job dictionary in alphafold3 format
+
+    Raises:
+        ValueError: If sequences list is empty
+    """
+    if len(sequences) == 0:
+        raise ValueError("Sequences list cannot be empty")
+
+    # Create sequence entries for all provided sequences
+    sequence_entries = []
+    for seq_data in sequences:
+        sequence_entries.append({
+            'protein': {
+                'id': seq_data['chain_id'],
+                'sequence': seq_data['sequence'],
+                'modifications': []
+            }
+        })
+
+    return {
+        'name': job_name,
+        'modelSeeds': [seed],
+        'sequences': sequence_entries,
+        'dialect': 'alphafold3',
+        'version': 1
+    }
 
 def create_job_batch_scoreCategories(pair_df: pd.DataFrame, batch_size: int, categories: List[Tuple[float, float]], 
                                 job_dirs: List[str], column_name: str, token_limit: int = 5120) -> List[Dict[str, Any]]:
