@@ -98,7 +98,11 @@ def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
         if file_name.endswith('.json') and os.path.isfile(os.path.join(results_dir, file_name)):
             try:
                 with open(os.path.join(results_dir, file_name), 'r') as f:
-                    collected_jobs += json.load(f)
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        collected_jobs += json.load(f)
+                    else:
+                        collected_jobs += [data]
                     
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Error reading {file_name}: {e}")
