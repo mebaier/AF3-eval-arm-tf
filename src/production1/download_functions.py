@@ -65,6 +65,128 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
         print(f"Unexpected error: {e}")
         return None
 
-# Example usage:
-# pdb_file = download_pdb_structure("3ouw")
-# pdb_file = download_pdb_structure("1abc", output_dir="/custom/path", file_format="pdb")
+
+def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
+    """
+    Download the amino acid sequences for each chain in a PDB structure.
+
+    Parameters:
+    -----------
+    pdb_id : str
+        The 4-character PDB ID (e.g., "3ouw")
+
+    Returns:
+    --------
+    list
+        List of dictionaries with 'chain_id' and 'sequence' keys, or None if download failed
+        Example: [{'chain_id': 'A', 'sequence': 'MKTI...'}, {'chain_id': 'B', 'sequence': 'AFGL...'}]
+    """
+    # Ensure PDB ID is lowercase for URL
+    pdb_id = pdb_id.lower()
+
+    # RCSB PDB REST API URL for FASTA sequences
+    url = f"https://www.rcsb.org/fasta/entry/{pdb_id}"
+
+    try:
+        # Download the FASTA file
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        # Parse FASTA content
+        fasta_content = response.text.strip()
+
+        if not fasta_content:
+            print(f"No sequence data found for PDB ID: {pdb_id}")
+            return []
+
+        sequences = []
+        current_chain = None
+        current_sequence = ""
+
+        for line in fasta_content.split('\n'):
+            if line.startswith('>'):
+                # Save previous sequence if exists
+                if current_chain is not None:
+                    if isinstance(current_chain, list):
+                        # Multiple chains - add each chain separately with the same sequence
+                        for chain_id in current_chain:
+                            sequences.append({
+                                'chain_id': chain_id,
+                                'sequence': current_sequence
+                            })
+                    else:
+                        # Single chain
+                        sequences.append({
+                            'chain_id': current_chain,
+                            'sequence': current_sequence
+                        })
+
+                # Extract chain ID(s) from header
+                # Header formats:
+                # >4HHB_1|Chain A|Hemoglobin subunit alpha|Homo sapiens (9606)
+                # >8H36_1|Chains A[auth D], H[auth E]|E3 ubiquitin-protein ligase RBX1|Homo sapiens (9606)
+                header_parts = line.split('|')
+                if len(header_parts) >= 2:
+                    chain_part = header_parts[1].strip()
+
+                    # Handle multiple chains with auth IDs
+                    if chain_part.startswith('Chains '):
+                        # Extract auth chain IDs from format like "Chains A[auth D], H[auth E]"
+                        chains_str = chain_part.replace('Chains ', '')
+                        chain_entries = [entry.strip() for entry in chains_str.split(',')]
+                        current_chains = []
+
+                        for entry in chain_entries:
+                            if '[auth ' in entry and ']' in entry:
+                                # Extract auth chain ID
+                                auth_start = entry.find('[auth ') + 6
+                                auth_end = entry.find(']', auth_start)
+                                auth_chain = entry[auth_start:auth_end]
+                                current_chains.append(auth_chain)
+                            else:
+                                # Fallback to regular chain ID if no auth
+                                current_chains.append(entry.strip())
+
+                        current_chain = current_chains
+                    elif chain_part.startswith('Chain '):
+                        # Single chain format
+                        current_chain = [chain_part.replace('Chain ', '')]
+                    else:
+                        raise Exception("No chain ID!")
+                else:
+                    raise Exception("No chain ID!")
+
+                current_sequence = ""
+            else:
+                # Accumulate sequence lines
+                current_sequence += line.strip()
+
+        # Add final sequence(s)
+        if current_chain is not None:
+            if isinstance(current_chain, list):
+                # Multiple chains - add each chain separately with the same sequence
+                for chain_id in current_chain:
+                    sequences.append({
+                        'chain_id': chain_id,
+                        'sequence': current_sequence
+                    })
+            else:
+                # Single chain
+                sequences.append({
+                    'chain_id': current_chain,
+                    'sequence': current_sequence
+                })
+
+        if sequences:
+            print(f"Successfully downloaded sequences for {pdb_id}: {len(sequences)} chain(s)")
+            return sequences
+        else:
+            print(f"No sequences found in FASTA data for {pdb_id}")
+            return []
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading sequences for {pdb_id}: {e}")
+        return []
+    except Exception as e:
+        print(f"Error while processing sequences for {pdb_id}: {e}")
+        return []
