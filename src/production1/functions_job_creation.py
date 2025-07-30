@@ -100,7 +100,7 @@ def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
                 with open(os.path.join(results_dir, file_name), 'r') as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        collected_jobs += json.load(f)
+                        collected_jobs += data
                     else:
                         collected_jobs += [data]
                     
