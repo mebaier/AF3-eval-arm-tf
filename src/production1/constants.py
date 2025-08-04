@@ -1,8 +1,7 @@
 """
 Filter data for protein domain identification.
 
-This module contains accession lists for identifying proteins with
-armadillo repeat domains from InterPro and Pfam databases.
+This module contains constants that are used for the filtering.
 """
 
 # All InterPro IDs that have the word "armadillo" in the description
@@ -48,3 +47,12 @@ arm_accs_pfam = [
     'PF14726.11',
     'PF18581.7'
 ]
+
+# Definitions for Disordered Regions IUPred3
+IUPRED3_THRESHOLD = 0.5
+MIN_LENGTH_DISORDERED_REGION = 20
+IUPRED_CACHE_DIR = '/home/markus/MPI_local/production1/IUPred3'
+IUPRED3_PATH = '../../iupred3'
+
+# Limit for AF3 tokens
+AF_TOKEN_LIMIT = 5120
