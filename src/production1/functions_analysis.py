@@ -1,8 +1,8 @@
 import pandas as pd
-import os
-import json
+import os, json, itertools
 from typing import List, Dict, Any, Tuple
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 def create_pair_id(row: pd.Series) -> str:
     """Create a pair ID from the job name by extracting the Uniprot IDs and sorting them.
@@ -319,3 +319,137 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     ret = df[(df['ranking_score'] >= 0) & (df['ranking_score'] <= 1)]
     
     return ret
+
+def get_job_name(id_tf: str, id_arm: str, df: pd.DataFrame):
+    row_arm = df[df['Entry'] == id_arm.lower()]
+    if row_arm.empty:
+        raise Exception(f"Not found in df: {id_arm}")
+    row_tf = df[df['Entry'] == id_tf.lower()]
+    if row_tf.empty:
+        raise Exception(f"Not found in df: {id_tf}")
+    length_arm = row_arm['Length'].iloc[0]
+    length_tf = row_tf['Length'].iloc[0]
+    return str.lower(f"{id_arm}_1-{length_arm}_{id_tf}_1-{length_tf}")
+
+def get_all_chain_mappings(native_chains, model_chains) -> List:
+    all_mappings = []
+
+    if len(native_chains) > len(model_chains):
+        all_subsets = itertools.combinations(native_chains, len(model_chains))
+        for subset in all_subsets:
+            all_mappings.extend(all_bijective_mappings(subset, model_chains))
+    elif len(model_chains) > len(native_chains):
+        all_subsets = itertools.combinations(model_chains, len(native_chains))
+        for subset in all_subsets:
+            all_mappings.extend(all_bijective_mappings(native_chains, subset))
+    else:
+        all_mappings = all_bijective_mappings(native_chains, model_chains)
+    return all_mappings
+
+def all_bijective_mappings(A, B):
+    """
+    Return a list containing every dictionary that maps each element of A
+    to a unique element of B.  A and B must be the same length.
+    """
+
+    # For each permutation of B, zip it with A to make a mapping dict
+    return [dict(zip(A, perm)) for perm in itertools.permutations(B)]
+
+def get_file_path(filename: str, search_dir: str):
+    """search the file with filename in dir and return the full path if it exists, otherwise return False
+
+    Args:
+        filename (str): _description_
+    """
+    path = Path(search_dir)
+    for file in path.rglob(filename):
+        return file  # return the first match
+    return False
+
+def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str, 
+                          all_uniprot: pd.DataFrame, pathmode: str) -> pd.DataFrame:
+    """Calculate DockQ scores for protein structures and append results to dataframe.
+
+    This function calculates DockQ scores for all structures in the input dataframe by comparing
+    predicted models with native PDB structures using all possible chain mappings.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing structure information with columns 'query_tf', 'query_arm', 'pdb_id'
+        native_path_prefix (str): Path prefix for native PDB structure files
+        model_results_dir (str): Directory containing predicted model files
+        all_uniprot (pd.DataFrame): UniProt dataframe for getting job names
+
+    Returns:
+        pd.DataFrame: Input dataframe with added 'chain_map' and 'dockq_score' columns
+    """
+    from DockQ.DockQ import load_PDB, run_on_all_native_interfaces
+
+    # Create copies to avoid modifying the original dataframe
+    result_df = df.copy()
+    result_df['chain_map'] = None
+    result_df['dockq_score'] = None
+
+    no_model = []
+    no_native = []
+
+    # Process each structure
+    for index, row in result_df.iterrows():
+        native_path_cif = f'{native_path_prefix}{row["pdb_id"].lower()}.cif'
+        if not os.path.exists(native_path_cif):
+            no_native.append((native_path_cif, job_name))
+            continue
+
+        native = load_PDB(native_path_cif)
+
+        if pathmode == 'uniprot':
+            model_path, job_name = get_model_path_uniprot(row, model_results_dir, all_uniprot)
+        elif pathmode == 'pdb':
+            model_path, job_name = get_model_path_pdb(row, model_results_dir)
+
+        if not model_path:
+            no_model.append((model_path, job_name))
+
+        model = load_PDB(model_path)
+
+        native_chains = [chain.id for chain in model]
+        model_chains = [chain.id for chain in native]
+        chain_map_dict = {}
+
+        if len(model_chains) > 2:
+            print(f"{row['pdb_id']}: Warning: Native structure ({native}) has more than two chains!")
+
+        for chain_map in get_all_chain_mappings(model_chains, native_chains):
+            try:
+                dockQ = run_on_all_native_interfaces(model, native, chain_map=chain_map)[1]
+            except Exception as e:
+                print(f"Exception for {row['pdb_id']}: {e}. Comment in review: {row['comment']}")
+                break
+            chain_map_dict[str(chain_map)] = dockQ
+
+        if chain_map_dict:
+            best_chain_map = max(chain_map_dict.keys(), key=(lambda key: chain_map_dict[key]))
+            best_dockq_score = chain_map_dict[best_chain_map]
+
+            # Store results in the DataFrame
+            result_df.at[index, 'chain_map'] = best_chain_map
+            result_df.at[index, 'dockq_score'] = best_dockq_score
+
+    # Report missing files
+    if no_model:
+        print("Missing model files:")
+        print(str([(t[0], t[1]) for t in no_model]))
+    if no_native:
+        print("Missing native files:")
+        for path in no_native:
+            print(f"  NATIVE: {path}")
+
+    return result_df
+
+def get_model_path_uniprot(row: pd.Series, model_results_dir: str, uniprot_df: pd.DataFrame):
+    job_name = get_job_name(row['query_tf'].split('|')[0], row['query_arm'].split('|')[0], uniprot_df)
+    model_path = get_file_path(f'{job_name}_model.cif', model_results_dir)
+
+    return model_path, job_name
+
+def get_model_path_pdb(row: pd.Series, model_results_dir: str):
+    return get_file_path(f'{row['pdb_id'].lower()}_model.cif', model_results_dir), row['pdb_id']
