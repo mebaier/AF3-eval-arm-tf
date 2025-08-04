@@ -2,6 +2,7 @@ import requests
 import os
 from pathlib import Path
 from typing import List, Dict
+import pandas as pd
 
 def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif"):
     """
@@ -65,6 +66,23 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
         print(f"Unexpected error: {e}")
         return None
 
+def download_pdb_structures(pdb_ids, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif"):
+    downloaded_count = 0
+    failed_count = 0
+
+    for pdb_id in pdb_ids:
+        if pd.isna(pdb_id):  # Skip NaN values
+            continue
+
+        result = download_pdb_structure(pdb_id, output_dir, file_format)
+        if result:
+            downloaded_count += 1
+        else:
+            failed_count += 1
+
+    print(f"Successfully processed: {downloaded_count}")
+    print(f"Failed downloads: {failed_count}")
+    print(f"Total processed: {len([pdb_id for pdb_id in pdb_ids if not pd.isna(pdb_id)])}")
 
 def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
     """
