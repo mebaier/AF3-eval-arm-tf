@@ -55,27 +55,40 @@ def sort_rec(obj: Union[List[Any], Dict[str, Any], Any]) -> Any:
     else:
         return obj
     
-def get_comparable_job(job_data: Dict[str, Any], deep_copy: bool = True) -> Any:
-    """Create a comparable representation of the job by removing the name field and sorting the other fields.
+def get_comparable_job(job_data: Dict[str, Any]) -> Any:
+    """Create a comparable representation of the job by extracting the used sequences.
     
     This function creates a standardized representation of an AlphaFold job that can be compared
-    to other jobs to detect duplicates, regardless of the job name or field order.
+    to other jobs to detect duplicates, regardless of the job name or field order. 
+    IMPORTANT: ignores modifications of sequences etc.!
     
     Args:
         job_data (Dict[str, Any]): AlphaFold job dictionary
-        deep_copy (bool, optional): Whether to create a deep copy of the job data. Defaults to True.
 
     Returns:
         Any: Comparable representation of the job
     """
-    if deep_copy:
-        # Create a deep copy to avoid modifying the original
-        comparable = copy.deepcopy(job_data)
+    comparable = []
+    if job_data['dialect'] == 'alphafoldserver':
+        # Extract sequences from alphafoldserver format
+        for seq_entry in job_data['sequences']:
+            protein_chain = seq_entry['proteinChain']
+            sequence = protein_chain['sequence']
+            count = protein_chain['count']
+            # Add the sequence 'count' times to the comparable list
+            for _ in range(count):
+                comparable.append(sequence)
+
+    elif job_data['dialect'] == 'alphafold3':
+        # Extract sequences from alphafold3 format
+        for seq_entry in job_data['sequences']:
+            protein = seq_entry['protein']
+            sequence = protein['sequence']
+            # Each sequence appears once in alphafold3 format
+            comparable.append(sequence)
     else:
-        comparable = job_data
-    if 'name' in comparable:
-        del comparable['name']
-    return sort_rec(comparable)
+        raise Exception(f"Invalid dialect for {job_data}.")
+    return sorted(comparable)
 
 def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
     """Collect all jobs in a directory (all .json files are considered jobs).
@@ -237,7 +250,7 @@ def create_job_batch_scoreCategories(pair_df: pd.DataFrame, batch_size: int, cat
         prev_jobs += collect_created_jobs(dir)
         
     for i in range(len(prev_jobs)):
-        prev_jobs[i] = get_comparable_job(prev_jobs[i], deep_copy=False)
+        prev_jobs[i] = get_comparable_job(prev_jobs[i])
     
     total_created = 0
     num_categories = len(categories)
@@ -352,7 +365,7 @@ def create_job_batch_all_pairs(pair_df: pd.DataFrame, batch_size: int,
         prev_jobs += collect_created_jobs(dir)
         
     for i in range(len(prev_jobs)):
-        prev_jobs[i] = get_comparable_job(prev_jobs[i], deep_copy=False)
+        prev_jobs[i] = get_comparable_job(prev_jobs[i])
     
     possible_ind = pair_df.index.tolist()   
     
@@ -426,7 +439,7 @@ def create_job_batch_id_list(pair_df: pd.DataFrame, id_list: List[Tuple[str, str
         prev_jobs += collect_created_jobs(dir)
         
     for i in range(len(prev_jobs)):
-        prev_jobs[i] = get_comparable_job(prev_jobs[i], deep_copy=False)
+        prev_jobs[i] = get_comparable_job(prev_jobs[i])
         
     total_created = 0
     
