@@ -126,7 +126,7 @@ def print_to_fasta(id: str, seq: str, path: str, comment: str = '') -> None:
         f.write(header)
         f.write(f"{seq}\n")        
 
-def add_iupred3(df: pd.DataFrame, type, smoothing, cache_dir, threshold, min_length_region, iupred_path):
+def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, min_length_region, iupred_path):
     import sys
     sys.path.append(iupred_path)
     import iupred3_lib
@@ -135,8 +135,12 @@ def add_iupred3(df: pd.DataFrame, type, smoothing, cache_dir, threshold, min_len
     df['iupred3'] = None
     
     for ind, row in df.iterrows():
-        seq = row['Sequence']
-        cache_key = hashlib.md5((seq + type + str(smoothing)).encode()).hexdigest()
+        seq = str(row['Sequence'])
+        if seq == '':
+            df.at[ind, 'iupred3'] = ''
+            df.at[ind, 'num_disordered_regions'] = 0
+            continue
+        cache_key = hashlib.md5((str(seq) + type + str(smoothing)).encode()).hexdigest()
         cache_file = os.path.join(cache_dir, f"{cache_key}.txt")
         if os.path.exists(cache_file):
             with open(cache_file, 'r') as f:
