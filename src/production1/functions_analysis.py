@@ -408,6 +408,7 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
 
         if not model_path:
             no_model.append((model_path, job_name))
+            continue
 
         model = load_PDB(model_path)
 
