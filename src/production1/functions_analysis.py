@@ -3,6 +3,7 @@ import os, json, itertools
 from typing import List, Dict, Any, Tuple
 import matplotlib.pyplot as plt
 from pathlib import Path
+from Bio.PDB import MMCIFParser, PDBIO
 
 def create_pair_id(row: pd.Series) -> str:
     """Create a pair ID from the job name by extracting the Uniprot IDs and sorting them.
@@ -367,7 +368,7 @@ def get_file_path(filename: str, search_dir: str):
     return False
 
 def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str, 
-                          all_uniprot: pd.DataFrame, pathmode: str) -> pd.DataFrame:
+                          all_uniprot: pd.DataFrame, pathmode: str, pdb_cache: str) -> pd.DataFrame:
     """Calculate DockQ scores for protein structures and append results to dataframe.
 
     This function calculates DockQ scores for all structures in the input dataframe by comparing
@@ -402,15 +403,15 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
         native = load_PDB(native_path_cif)
 
         if pathmode == 'uniprot':
-            model_path, job_name = get_model_path_uniprot(row, model_results_dir, all_uniprot)
+            model_path_cif, job_name = get_model_path_uniprot(row, model_results_dir, all_uniprot)
         elif pathmode == 'pdb':
-            model_path, job_name = get_model_path_pdb(row, model_results_dir)
+            model_path_cif, job_name = get_model_path_pdb(row, model_results_dir)
 
-        if not model_path:
-            no_model.append((model_path, job_name))
+        if not model_path_cif:
+            no_model.append((model_path_cif, job_name))
             continue
 
-        model = load_PDB(model_path)
+        model = load_PDB(get_pdb_from_cif(model_path_cif, pdb_cache))
 
         native_chains = [chain.id for chain in model]
         model_chains = [chain.id for chain in native]
@@ -454,3 +455,37 @@ def get_model_path_uniprot(row: pd.Series, model_results_dir: str, uniprot_df: p
 
 def get_model_path_pdb(row: pd.Series, model_results_dir: str):
     return get_file_path(f'{row['pdb_id'].lower()}_model.cif', model_results_dir), row['pdb_id']
+
+def get_pdb_from_cif(cif_path: Path, pdb_dir: str) -> str:
+    """for the .cif structure at cif_path, check if there is a pdb file available in pdb_dir.
+    If not, convert the .cif to a pdb file and store it in pdb_dir. Return the path to the pdb file
+
+    Args:
+        cif_path (str): Path to the input CIF file
+        pdb_dir (str): Directory to store/find PDB files
+
+    Returns:
+        str: Path to the PDB file
+    """
+    # Create pdb_dir if it doesn't exist
+    os.makedirs(pdb_dir, exist_ok=True)
+
+    # Extract filename without extension from cif_path
+    cif_filename = os.path.basename(cif_path)
+    pdb_filename = os.path.splitext(cif_filename)[0] + '.pdb'
+    pdb_path = os.path.join(pdb_dir, pdb_filename)
+
+    # Check if PDB file already exists
+    if os.path.exists(pdb_path):
+        return pdb_path
+
+    # Convert CIF to PDB
+    parser = MMCIFParser(QUIET=False)
+    structure = parser.get_structure("structure", cif_path)
+
+    # Write to PDB
+    io = PDBIO()
+    io.set_structure(structure)
+    io.save(pdb_path)
+
+    return pdb_path
