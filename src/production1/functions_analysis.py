@@ -368,7 +368,7 @@ def get_file_path(filename: str, search_dir: str):
     return False
 
 def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str, 
-                          all_uniprot: pd.DataFrame, pathmode: str, pdb_cache: str) -> pd.DataFrame:
+                          all_uniprot: pd.DataFrame, pathmode: str, pdb_cache: str, dockq_cache: str) -> pd.DataFrame:
     """Calculate DockQ scores for protein structures and append results to dataframe.
 
     This function calculates DockQ scores for all structures in the input dataframe by comparing
@@ -379,11 +379,19 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
         native_path_prefix (str): Path prefix for native PDB structure files
         model_results_dir (str): Directory containing predicted model files
         all_uniprot (pd.DataFrame): UniProt dataframe for getting job names
+        pathmode (str): Mode for path resolution ('uniprot' or 'pdb')
+        pdb_cache (str): Directory for PDB file cache
+        dockq_cache (str): Directory for DockQ results cache
 
     Returns:
         pd.DataFrame: Input dataframe with added 'chain_map' and 'dockq_score' columns
     """
+    import pickle
+    import hashlib
     from DockQ.DockQ import load_PDB, run_on_all_native_interfaces
+
+    # Create cache directory if it doesn't exist
+    os.makedirs(dockq_cache, exist_ok=True)
 
     # Create copies to avoid modifying the original dataframe
     result_df = df.copy()
@@ -400,8 +408,6 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
             no_native.append((native_path_cif, job_name))
             continue
 
-        native = load_PDB(native_path_cif)
-
         if pathmode == 'uniprot':
             model_path_cif, job_name = get_model_path_uniprot(row, model_results_dir, all_uniprot)
         elif pathmode == 'pdb':
@@ -411,6 +417,22 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
             no_model.append((model_path_cif, job_name))
             continue
 
+        # Create cache key based on model and native paths
+        cache_key = hashlib.md5(f"{str(job_name)}".encode()).hexdigest()
+        cache_file = os.path.join(dockq_cache, f"dockq_{cache_key}.pkl")
+
+        # Check if results are cached
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    cached_result = pickle.load(f)
+                result_df.at[index, 'chain_map'] = cached_result['chain_map']
+                result_df.at[index, 'dockq_score'] = cached_result['dockq_score']
+                continue
+            except (pickle.PickleError, IOError) as e:
+                print(f"Error loading cache file {cache_file}: {e}")
+
+        native = load_PDB(native_path_cif)
         model = load_PDB(get_pdb_from_cif(model_path_cif, pdb_cache))
 
         native_chains = [chain.id for chain in model]
@@ -435,6 +457,17 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
             # Store results in the DataFrame
             result_df.at[index, 'chain_map'] = best_chain_map
             result_df.at[index, 'dockq_score'] = best_dockq_score
+
+            # Cache the results
+            cache_data = {
+                'chain_map': best_chain_map,
+                'dockq_score': best_dockq_score
+            }
+            try:
+                with open(cache_file, 'wb') as f:
+                    pickle.dump(cache_data, f)
+            except IOError as e:
+                print(f"Error saving cache file {cache_file}: {e}")
 
     # Report missing files
     if no_model:
