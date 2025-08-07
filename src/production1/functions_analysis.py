@@ -323,6 +323,8 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     
     # clean ranking score
     ret = df[(df['ranking_score'] >= 0) & (df['ranking_score'] <= 1)]
+    ret = df[(df['iptm'] >= 0) & (df['iptm'] <= 1)]
+    ret = df[(df['ptm'] >= 0) & (df['ptm'] <= 1)]
     
     return ret
 
