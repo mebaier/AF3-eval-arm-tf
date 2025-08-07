@@ -319,12 +319,26 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Cleaned DataFrame
     """
+    initial_count = len(df)
+    print(f"Initial dataset size: {initial_count} rows")
+
     ret = df.copy(deep=True)
-    
+
     # clean ranking score
-    ret = df[(df['ranking_score'] >= 0) & (df['ranking_score'] <= 1)]
-    ret = df[(df['iptm'] >= 0) & (df['iptm'] <= 1)]
-    ret = df[(df['ptm'] >= 0) & (df['ptm'] <= 1)]
+    ret = ret[(ret['ranking_score'] >= 0) & (ret['ranking_score'] <= 1)]
+    ranking_score_count = len(ret)
+    print(f"After filtering ranking_score [0,1]: {ranking_score_count} rows ({initial_count - ranking_score_count} removed)")
+
+    ret = ret[(ret['iptm'] >= 0) & (ret['iptm'] <= 1)]
+    iptm_count = len(ret)
+    print(f"After filtering iptm [0,1]: {iptm_count} rows ({ranking_score_count - iptm_count} removed)")
+
+    ret = ret[(ret['ptm'] >= 0) & (ret['ptm'] <= 1)]
+    final_count = len(ret)
+    print(f"After filtering ptm [0,1]: {final_count} rows ({iptm_count - final_count} removed)")
+
+    total_removed = initial_count - final_count
+    print(f"Total rows removed: {total_removed} ({total_removed/initial_count*100:.2f}%)")
     
     return ret
 
