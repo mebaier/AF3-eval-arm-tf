@@ -35,11 +35,16 @@ def find_summary_files(directory: str) -> List[Dict[str, Any]]:
     """
     all_jobs_data = []
     duplicates = 0
-    
+
+    if not os.path.exists(directory):
+        raise FileNotFoundError(f"Directory '{directory}' does not exist")
+    if not os.path.isdir(directory):
+        raise NotADirectoryError(f"Path '{directory}' is not a directory")
+
     for root, dirs, files in os.walk(directory):
         # Check for summary_confidences.json files
         summary_files = [f for f in files if f.endswith('_summary_confidences.json')]
-        
+
         if summary_files:
             for summary_file in summary_files:
                 # Extract job name from the filename
