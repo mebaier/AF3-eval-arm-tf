@@ -66,7 +66,7 @@ def create_scatter_plot_colour(df: pd.DataFrame, x_metric: str, y_metric: str, c
         plt.show()
         
 def create_scatter_plot(df: pd.DataFrame, x_metric: str, y_metric: str,
-                        title: str = '', alpha: float = 0.7, size: int = 50, ax=None) -> None:
+                        title: str = '', alpha: float = 0.7, size: int = 50, ax=None, corr=False) -> None:
     """Create a scatter plot with two metrics.
     
     This function creates a scatter plot between two specified metrics.
@@ -79,6 +79,7 @@ def create_scatter_plot(df: pd.DataFrame, x_metric: str, y_metric: str,
         alpha (float, optional): Transparency of points. Defaults to 0.7.
         size (int, optional): Point size. Defaults to 50.
         ax (matplotlib.axes.Axes, optional): Axes object to plot on. If None, creates new figure.
+        corr (bool, optional): Whether to calculate and display Pearson correlation coefficient. Defaults to False.
         
     Returns:
         None
@@ -132,6 +133,11 @@ def create_scatter_plot(df: pd.DataFrame, x_metric: str, y_metric: str,
         annotation_text = f'Datapoints: {num_valid_points}'
     else:
         annotation_text = f'Datapoints: {num_valid_points}/{num_total_points} (valid/total)'
+    
+    # Calculate and add correlation coefficient if requested
+    if corr:
+        correlation = valid_data[x_metric].corr(valid_data[y_metric])
+        annotation_text += f'\nPearson r: {correlation:.3f}'
     
     ax.annotate(annotation_text, xy=(0.05, 0.95), xycoords='axes fraction', 
                 fontsize=10, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.8))
