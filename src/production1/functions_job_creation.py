@@ -533,9 +533,10 @@ def create_job_batch_sequences_dict(job_list: List[Dict[str, Any]],
         prev_jobs += collect_created_jobs(dir)
 
     for i in range(len(prev_jobs)):
-        prev_jobs[i] = get_comparable_job(prev_jobs[i])
+        prev_jobs[i] = (prev_jobs[i]['name'], get_comparable_job(prev_jobs[i]))
 
     total_created = 0
+    duplicates = 0
 
     for job_dict in job_list:
 
@@ -553,13 +554,19 @@ def create_job_batch_sequences_dict(job_list: List[Dict[str, Any]],
 
         # check if job was already created earlier
         job_comparable = get_comparable_job(job)
-        if not any(existing_comparable == job_comparable for existing_comparable in prev_jobs):
+        if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
             # no duplicate job found
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
             new_jobs.append(job)
+        else:
+            matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
+            print(f"Skipping duplicate job: {job_dict['name']}")
+            print(f"Duplicate IDs: {matches}")
+            duplicates += 1
 
     # Print the number of jobs created in each category
+    print(f"Skipped {duplicates} duplicate jobs.")
     print(f"Created {len(new_jobs)} new jobs total.")
 
     return new_jobs
