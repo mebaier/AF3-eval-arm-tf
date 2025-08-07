@@ -403,8 +403,15 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
     no_model = []
     no_native = []
 
+    count = 0
+
     # Process each structure
     for index, row in result_df.iterrows():
+
+        if count % 10 == 0:
+            print(f"Processed {count} of {len(result_df)} rows.")
+        count += 1
+
         native_path_cif = f'{native_path_prefix}{row["pdb_id"].lower()}.cif'
         if not os.path.exists(native_path_cif):
             no_native.append((native_path_cif, job_name))
