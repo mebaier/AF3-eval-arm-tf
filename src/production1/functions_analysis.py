@@ -397,6 +397,8 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
     result_df = df.copy()
     result_df['chain_map'] = None
     result_df['dockq_score'] = None
+    result_df['job_name'] = None
+    result_df['dockq_complete'] = None
 
     no_model = []
     no_native = []
@@ -418,7 +420,7 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
             continue
 
         # Create cache key based on model and native paths
-        cache_key = hashlib.md5(f"{str(job_name)}".encode()).hexdigest()
+        cache_key = hashlib.md5(f"{str(job_name)}_complete".encode()).hexdigest()
         cache_file = os.path.join(dockq_cache, f"dockq_{cache_key}.pkl")
 
         # Check if results are cached
@@ -428,6 +430,9 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
                     cached_result = pickle.load(f)
                 result_df.at[index, 'chain_map'] = cached_result['chain_map']
                 result_df.at[index, 'dockq_score'] = cached_result['dockq_score']
+                result_df.at[index, 'job_name'] = job_name
+                result_df.at[index, 'dockq_complete'] = cached_result['dockq_complete']
+                print(f"used cached entry for: {job_name}")
                 continue
             except (pickle.PickleError, IOError) as e:
                 print(f"Error loading cache file {cache_file}: {e}")
@@ -444,24 +449,28 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
 
         for chain_map in get_all_chain_mappings(model_chains, native_chains):
             try:
-                dockQ = run_on_all_native_interfaces(model, native, chain_map=chain_map)[1]
+                dockQ_complete = run_on_all_native_interfaces(model, native, chain_map=chain_map)
             except Exception as e:
-                print(f"Exception for {row['pdb_id']}: {e}. Comment in review: {row['comment']}")
+                print(f"Exception for {row['pdb_id']}: {e}.")
                 break
-            chain_map_dict[str(chain_map)] = dockQ
+            chain_map_dict[str(chain_map)] = dockQ_complete
 
         if chain_map_dict:
-            best_chain_map = max(chain_map_dict.keys(), key=(lambda key: chain_map_dict[key]))
-            best_dockq_score = chain_map_dict[best_chain_map]
+            best_chain_map = max(chain_map_dict.keys(), key=(lambda key: chain_map_dict[key][1]))
+            best_dockq_score = chain_map_dict[best_chain_map][1]
+            best_dockq_complete = chain_map_dict[best_chain_map]
 
             # Store results in the DataFrame
             result_df.at[index, 'chain_map'] = best_chain_map
             result_df.at[index, 'dockq_score'] = best_dockq_score
+            result_df.at[index, 'dockq_complete'] = best_dockq_complete
+            result_df.at[index, 'job_name'] = job_name
 
             # Cache the results
             cache_data = {
                 'chain_map': best_chain_map,
-                'dockq_score': best_dockq_score
+                'dockq_score': best_dockq_score,
+                'dockq_complete': best_dockq_complete
             }
             try:
                 with open(cache_file, 'wb') as f:
@@ -471,7 +480,7 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
 
     # Report missing files
     if no_model:
-        print("Missing model files:")
+        print(f"Missing model files: {len(no_model)}")
         print(str([(t[0], t[1]) for t in no_model]))
     if no_native:
         print("Missing native files:")
