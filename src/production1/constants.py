@@ -56,3 +56,5 @@ IUPRED3_PATH = '../../iupred3'
 
 # Limit for AF3 tokens
 AF_TOKEN_LIMIT = 5120
+
+AF_TRAINING_CUTOFF = '2021-09-30'
