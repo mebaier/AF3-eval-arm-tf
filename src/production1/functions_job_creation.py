@@ -557,7 +557,7 @@ def create_job_batch_sequences_dict(job_list: List[Dict[str, Any]],
 
         # check if job was already created earlier
         job_comparable = get_comparable_job(job)
-        if not any(existing_comparable == job_comparable for existing_comparable in prev_jobs):
+        if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
             # no duplicate job found
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
@@ -646,7 +646,7 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
             length += len(seq_dict['sequence'])
 
         if length > token_limit:
-            print(f"Skipping because of token limit: {pdb_id}")
+            print(f"Skipping because of token limit: {pdb_id} (length: {length})")
             continue
 
         # Create job using the helper function
@@ -654,7 +654,7 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
 
         # check if job was already created earlier
         job_comparable = get_comparable_job(job)
-        if not any(existing_comparable == job_comparable for existing_comparable in prev_jobs):
+        if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
             # no duplicate job found
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
