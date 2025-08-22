@@ -6,6 +6,7 @@ import math
 import copy
 import random
 import re
+from download_functions import download_pdb_sequence
 
 def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
     """Write each AlphaFold job to an individual file.
@@ -608,3 +609,64 @@ def rewrite_af_job(af_job: Dict[str, Any]) -> Dict[str, Any]:
     
     # Create new job in alphafold3 dialect
     return create_alphafold_job(job_name, sequence1, sequence2, dialect='alphafold3')
+
+def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120):
+    """create a job batch from a list of PDB ids.
+    Don't create duplicate jobs, don't create jobs that exceed token limit
+
+    Args:
+        pdb_ids (List): _description_
+        job_dirs (List[str]): _description_
+        token_limit (int, optional): _description_. Defaults to 5120.
+
+    Returns:
+        _type_: _description_
+    """
+    new_jobs = []
+    prev_jobs = []
+    for dir in job_dirs:
+        prev_jobs += collect_created_jobs(dir)
+
+    for i in range(len(prev_jobs)):
+        prev_jobs[i] = (prev_jobs[i]['name'], get_comparable_job(prev_jobs[i]))
+
+    total_created = 0
+    duplicates = 0
+
+    for pdb_id in pdb_ids:
+
+        length = 0
+
+        sequences = download_pdb_sequence(pdb_id)
+        if len(sequences) == 0:
+            print(f"Empty sequence list: {pdb_id}")
+            continue
+
+        for seq_dict in sequences:
+            length += len(seq_dict['sequence'])
+
+        if length > token_limit:
+            print(f"Skipping because of token limit: {pdb_id}")
+            continue
+
+        # Create job using the helper function
+        job = create_alphafold_job_ms(pdb_id, sequences)
+
+        # check if job was already created earlier
+        job_comparable = get_comparable_job(job)
+        if not any(existing_comparable == job_comparable for existing_comparable in prev_jobs):
+            # no duplicate job found
+            total_created += 1
+            prev_jobs.append(get_comparable_job(job))
+            new_jobs.append(job)
+        else:
+            matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
+            print(f"Skipping duplicate job: {pdb_id}")
+            print(f"Duplicate IDs: {matches}")
+            duplicates += 1
+
+    # Print the number of jobs created in each category
+    print(f"Skipped {duplicates} duplicate jobs.")
+    print(f"Created {len(new_jobs)} new jobs total.")
+
+    return new_jobs
