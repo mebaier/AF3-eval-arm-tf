@@ -1,4 +1,4 @@
-import requests
+import requests, os, json
 import os
 from pathlib import Path
 from typing import List, Dict
@@ -210,3 +210,51 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
     except Exception as e:
         print(f"Error while processing sequences for {pdb_id}: {e}")
         return []
+    
+def get_pdb_chains_to_uniprot(pdb_id: str, cache_dir: str = ".pdb_cache") -> Dict[str, str]:
+    """
+    Return a mapping of PDB chain IDs to UniProt accessions for a given PDB entry.
+    Results are cached permanently as JSON files in `cache_dir`.
+
+    Parameters
+    ----------
+    pdb_id : str
+        Four-letter PDB identifier (e.g. "1ABC").
+    cache_dir : str, optional
+        Directory where results are cached (default: ".pdb_cache").
+
+    Returns
+    -------
+    Dict[str, str]
+        Dictionary mapping chain IDs (e.g. 'A') to UniProt IDs (e.g. 'P12345').
+    """
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"{pdb_id.lower()}.json")
+
+    # Load from cache if exists
+    if os.path.exists(cache_file):
+        with open(cache_file, "r") as f:
+            return json.load(f)
+
+    # Otherwise fetch from API
+    url = f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id}/"
+    mapping: Dict[str, str] = {}
+    i = 1
+    while True:
+        r = requests.get(url + str(i))
+        if r.status_code != 200:
+            break
+        d = r.json()
+        chains = d["rcsb_polymer_entity_container_identifiers"]["auth_asym_ids"]
+        refs = d["rcsb_polymer_entity_container_identifiers"].get("reference_sequence_identifiers", [])
+        for ref in refs:
+            if ref.get("database_name") == "UniProt":
+                for c in chains:
+                    mapping[c] = ref["database_accession"]
+        i += 1
+
+    # Save to cache
+    with open(cache_file, "w") as f:
+        json.dump(mapping, f)
+
+    return mapping
