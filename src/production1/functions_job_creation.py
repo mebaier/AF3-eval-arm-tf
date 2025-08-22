@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Any, Union, Optional, Set
 import math
 import copy
 import random
+import re
 
 def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
     """Write each AlphaFold job to an individual file.
@@ -202,9 +203,10 @@ def create_alphafold_job_ms(job_name: str, sequences: List[Dict[str, str]], seed
     # Create sequence entries for all provided sequences
     sequence_entries = []
     for seq_data in sequences:
+        chain_id = re.sub(r'\[auth .+\]', '', seq_data['chain_id'])
         sequence_entries.append({
             'protein': {
-                'id': seq_data['chain_id'],
+                'id': chain_id,
                 'sequence': seq_data['sequence'],
                 'modifications': []
             }
@@ -554,7 +556,7 @@ def create_job_batch_sequences_dict(job_list: List[Dict[str, Any]],
 
         # check if job was already created earlier
         job_comparable = get_comparable_job(job)
-        if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
+        if not any(existing_comparable == job_comparable for existing_comparable in prev_jobs):
             # no duplicate job found
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
