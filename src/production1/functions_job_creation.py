@@ -102,7 +102,7 @@ def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
         OSError: If directory cannot be accessed
     """
     collected_jobs = []
-    
+
     # Go through all .json files in the results directory (not recursively)
     for file_name in os.listdir(results_dir):
         if file_name.endswith('.json') and os.path.isfile(os.path.join(results_dir, file_name)):
@@ -557,17 +557,177 @@ def create_job_batch_sequences_dict(job_list: List[Dict[str, Any]],
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
             new_jobs.append(job)
+            continue
         else:
             matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
-            print(f"Skipping duplicate job: {job_dict['name']}")
-            print(f"Duplicate IDs: {matches}")
+            if not job_dict['name'] in matches:
+                print(f"Skipping duplicate job UNDER DIFFERENT ID: {job_dict['name']}. Duplicate IDs: {matches}")
+                adjust_job_id([m.lower() for m in matches + [job_dict['name']]], ["/home/markus/MPI_local/HPC_results_full"], "/home/markus/MPI_local/HPC_results_full/copied_jobs")
+            else:
+                print(f"Skipping duplicate job: {job_dict['name']}. Duplicate IDs: {matches}")
             duplicates += 1
+            continue
 
     # Print the number of jobs created in each category
     print(f"Skipped {duplicates} duplicate jobs.")
     print(f"Created {len(new_jobs)} new jobs total.")
 
     return new_jobs
+
+def adjust_job_id(job_ids: list, source_results_dirs: List[str], target_results_dir: str) -> None:
+    """For the list of job IDs, check if at least one result directory with an ID in the list exists in any of the source_results_dirs.
+    For IDs that don't have an existing directory, create these directories in target_results_dir by copying the existing dir and renaming it.
+    Note: does not modify the IDs in the job files
+
+    Args:
+        job_ids (list): List of job IDs to check and create directories for
+        source_results_dirs (List[str]): List of base directories where existing result directories are located
+        target_results_dir (str): Base directory where new copied directories should be created
+    """
+
+    if not job_ids:
+        print("Warning: Empty job_ids list provided")
+        return
+
+    if not source_results_dirs:
+        print("Warning: Empty source_results_dirs list provided")
+        return
+
+    # Find existing directories for any of the job IDs by searching recursively in all source directories
+    existing_dirs = []
+    missing_ids = []
+
+    for job_id in job_ids:
+        target_dir = os.path.join(target_results_dir, job_id)
+        source_dir = None
+
+        # Search recursively for the job_id directory in all source_results_dirs
+        for source_results_dir in source_results_dirs:
+            if not os.path.exists(source_results_dir):
+                print(f"Warning: Source directory '{source_results_dir}' does not exist")
+                continue
+  
+            for root, dirs, files in os.walk(source_results_dir):
+                if job_id in dirs:
+                    source_dir = os.path.join(root, job_id)
+                    break
+
+            if source_dir:
+                break
+
+        if source_dir and os.path.exists(source_dir):
+            existing_dirs.append((job_id, source_dir))
+        elif not os.path.exists(target_dir):
+            missing_ids.append(job_id)
+
+    if not existing_dirs:
+        print(f"Warning: No existing result directories found for any of the job IDs: {job_ids}")
+        return
+
+    if not missing_ids:
+        print(f"All job IDs already have existing directories in target location: {job_ids}")
+        return
+
+    # Create target results directory if it doesn't exist
+    os.makedirs(target_results_dir, exist_ok=True)
+
+    # Use the first existing directory as the source for copying
+    source_id, source_dir = existing_dirs[0]
+    print(f"Using '{source_dir}' as source directory for copying")
+
+    # Create directories for missing IDs by copying the existing one to target directory
+    for missing_id in missing_ids:
+        target_dir = os.path.join(target_results_dir, missing_id)
+        try:
+            shutil.copytree(source_dir, target_dir)
+            print(f"Created directory '{target_dir}' by copying from '{source_dir}'")
+
+            # Rename files and subdirectories within the copied directory
+            rename_paths(target_dir, source_id, missing_id)
+
+        except (OSError, shutil.Error) as e:
+            print(f"Error creating directory '{target_dir}': {e}")
+
+    print(f"Directory adjustment completed for job IDs: {job_ids}")
+
+def rename_paths(base_path: str, old_str: str, new_str: str) -> None:
+    """
+    Recursively rename files and directories under base_path,
+    replacing occurrences of old_str with new_str in their names.
+
+    Args:
+        base_path (str): The root directory to start renaming.
+        old_str (str): The substring to replace in names.
+        new_str (str): The substring to replace with.
+    """
+    if not os.path.exists(base_path):
+        print(f"Warning: Base path '{base_path}' does not exist.")
+        return
+
+    # Walk the directory tree bottom-up to rename files before their parent directories
+    for root, dirs, files in os.walk(base_path, topdown=False):
+
+        # Rename files first
+        for filename in files:
+            if old_str in filename:
+                old_file_path = os.path.join(root, filename)
+                new_filename = filename.replace(old_str, new_str)
+                new_file_path = os.path.join(root, new_filename)
+                try:
+                    os.rename(old_file_path, new_file_path)
+                    print(f"Renamed file: {old_file_path} -> {new_file_path}")
+                except OSError as e:
+                    print(f"Error renaming file {old_file_path}: {e}")
+
+        # Then rename directories
+        for dirname in dirs:
+            if old_str in dirname:
+                old_dir_path = os.path.join(root, dirname)
+                new_dirname = dirname.replace(old_str, new_str)
+                new_dir_path = os.path.join(root, new_dirname)
+                try:
+                    os.rename(old_dir_path, new_dir_path)
+                    print(f"Renamed directory: {old_dir_path} -> {new_dir_path}")
+                except OSError as e:
+                    print(f"Error renaming directory {old_dir_path}: {e}")
+
+def find_job_files(job_list: list, job_dir: str):
+    """for a list of jobs, find the corresponding job files in job_dir and print the path
+
+    Args:
+        job_list (list): list of job IDs to find
+        job_dir (str): directory to search for job files (searches recursively)
+    """
+
+    found_files = []
+    missing_jobs = []
+
+    # Create a dictionary to store all .json files found recursively
+    json_files = {}
+    for root, dirs, files in os.walk(job_dir):
+        for file in files:
+            if file.endswith('.json'):
+                job_id = file[:-5]  # Remove .json extension
+                full_path = os.path.join(root, file)
+                json_files[job_id] = full_path
+
+    # Search for each job ID
+    for job_id in job_list:
+        if job_id in json_files:
+            found_files.append(json_files[job_id])
+            print(f"Found: {json_files[job_id]}")
+        else:
+            missing_jobs.append(job_id)
+            print(f"Missing: {job_id}.json (searched recursively in {job_dir})")
+
+    print(f"\nSummary:")
+    print(f"Found {len(found_files)} job files")
+    print(f"Missing {len(missing_jobs)} job files")
+
+    if missing_jobs:
+        print(f"Missing jobs: {missing_jobs}")
+
+    return found_files, missing_jobs
 
 def rewrite_af_job(af_job: Dict[str, Any]) -> Dict[str, Any]:
     """Convert an AlphaFold job from alphafoldserver dialect to alphafold3 dialect.
