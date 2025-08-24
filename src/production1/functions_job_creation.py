@@ -1,11 +1,6 @@
 import pandas as pd
-import os
-import json
-from typing import List, Tuple, Dict, Any, Union, Optional, Set
-import math
-import copy
-import random
-import re
+import os, shutil, json, math, random, re
+from typing import List, Tuple, Dict, Any, Union
 from download_functions import download_pdb_sequence
 
 def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
