@@ -515,7 +515,7 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
         for path in no_native:
             print(f"  NATIVE: {path}")
 
-    return result_df
+    return result_df, [str(t[1]) for t in no_model]
 
 def get_model_path_uniprot(row: pd.Series, model_results_dir: str, uniprot_df: pd.DataFrame):
     job_name = get_job_name(row['query_tf'].split('|')[0], row['query_arm'].split('|')[0], uniprot_df)
