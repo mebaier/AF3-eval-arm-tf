@@ -1,8 +1,8 @@
 import requests, os, json
-import os
 from pathlib import Path
 from typing import List, Dict
 import pandas as pd
+from collections import defaultdict
 
 def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif"):
     """
@@ -141,41 +141,8 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
                             'sequence': current_sequence
                         })
 
-                # Extract chain ID(s) from header
-                # Header formats:
-                # >4HHB_1|Chain A|Hemoglobin subunit alpha|Homo sapiens (9606)
-                # >8H36_1|Chains A[auth D], H[auth E]|E3 ubiquitin-protein ligase RBX1|Homo sapiens (9606)
-                header_parts = line.split('|')
-                if len(header_parts) >= 2:
-                    chain_part = header_parts[1].strip()
-
-                    # Handle multiple chains with auth IDs
-                    if chain_part.startswith('Chains '):
-                        # Extract auth chain IDs from format like "Chains A[auth D], H[auth E]"
-                        chains_str = chain_part.replace('Chains ', '')
-                        chain_entries = [entry.strip() for entry in chains_str.split(',')]
-                        current_chains = []
-
-                        for entry in chain_entries:
-                            if '[auth ' in entry and ']' in entry:
-                                # Extract auth chain ID
-                                auth_start = entry.find('[auth ') + 6
-                                auth_end = entry.find(']', auth_start)
-                                auth_chain = entry[auth_start:auth_end]
-                                current_chains.append(auth_chain)
-                            else:
-                                # Fallback to regular chain ID if no auth
-                                current_chains.append(entry.strip())
-
-                        current_chain = current_chains
-                    elif chain_part.startswith('Chain '):
-                        # Single chain format
-                        current_chain = [chain_part.replace('Chain ', '')]
-                    else:
-                        raise Exception("No chain ID!")
-                else:
-                    raise Exception("No chain ID!")
-
+               
+                current_chain = extract_chain_ID(line)
                 current_sequence = ""
             else:
                 # Accumulate sequence lines
@@ -185,6 +152,7 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
         if current_chain is not None:
             if isinstance(current_chain, list):
                 # Multiple chains - add each chain separately with the same sequence
+                deduplicate(current_chain)
                 for chain_id in current_chain:
                     sequences.append({
                         'chain_id': chain_id,
@@ -211,6 +179,69 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
         print(f"Error while processing sequences for {pdb_id}: {e}")
         return []
     
+def extract_chain_ID(line: str) -> str|List[str]:
+    """Extract chain ID(s) from header
+    Header formats:
+    >4HHB_1|Chain A|Hemoglobin subunit alpha|Homo sapiens (9606)
+    >8H36_1|Chains A[auth D], H[auth E]|E3 ubiquitin-protein ligase RBX1|Homo sapiens (9606)
+    """               
+    header_parts = line.split('|')
+    if len(header_parts) >= 2:
+        chain_part = header_parts[1].strip()
+
+        # Handle multiple chains with auth IDs
+        if chain_part.startswith('Chains '):
+            # Extract auth chain IDs from format like "Chains A[auth D], H[auth E]"
+            chains_str = chain_part.replace('Chains ', '')
+            current_chain = [format_chain_string(entry) for entry in chains_str.split(',')]
+        elif chain_part.startswith('Chain '):
+            # Single chain format
+            chain_part = chain_part.replace('Chain ', '')
+            current_chain = [format_chain_string(chain_part)]
+        else:
+            raise Exception("No chain ID!")
+    else:
+        raise Exception("No chain ID!")
+    return current_chain
+    
+def format_chain_string(chain_str: str) -> str:
+    chain_str = chain_str.replace('[', '')
+    chain_str = chain_str.replace(']', '')
+    chain_str = chain_str.upper()
+    chain_str = chain_str.strip()
+    return chain_str
+
+def int_to_base36(n: int) -> str:
+    """Convert int to base36 string using [a-z0-9]."""
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    res = ""
+    while True:
+        n, r = divmod(n, 36)
+        res = chars[r] + res
+        if n == 0:
+            return res
+
+def deduplicate(strings: list[str]) -> list[str]:
+    seen = defaultdict(int)
+    used = set(strings)
+    result = []
+
+    for s in strings:
+        if seen[s] == 0 and s not in result:
+            result.append(s)
+        else:
+            i = seen[s]
+            new = f"{s}{int_to_base36(i)}"
+            while new in used:
+                i += 1
+                new = f"{s}{int_to_base36(i)}"
+            result.append(new)
+            used.add(new)
+            seen[s] = i
+        seen[s] += 1
+    return result
+
+
 def get_pdb_chains_to_uniprot(pdb_id: str, cache_dir: str = ".pdb_cache") -> Dict[str, str]:
     """
     Return a mapping of PDB chain IDs to UniProt accessions for a given PDB entry.
