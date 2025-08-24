@@ -1,4 +1,4 @@
-import requests, os, json
+import requests, os, json, re
 from pathlib import Path
 from typing import List, Dict
 import pandas as pd
@@ -154,12 +154,16 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
                 # Multiple chains - add each chain separately with the same sequence
                 deduplicate(current_chain)
                 for chain_id in current_chain:
+                    if not bool(re.fullmatch(r'[A-Z0-9]+', chain_id)):
+                        raise Exception(f"ID must only contain alphanumeric upper-case chars: {chain_id}")
                     sequences.append({
                         'chain_id': chain_id,
                         'sequence': current_sequence
                     })
             else:
                 # Single chain
+                if not bool(re.fullmatch(r'[A-Z0-9]+', current_chain)):
+                    raise Exception(f"ID must only contain alphanumeric upper-case chars: {current_chain}")
                 sequences.append({
                     'chain_id': current_chain,
                     'sequence': current_sequence
