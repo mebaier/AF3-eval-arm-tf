@@ -33,24 +33,6 @@ def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir:
                 json.dump(job, f, indent=2)
             else:
                 raise Exception('Incorrect dialect.')
-
-def sort_rec(obj: Union[List[Any], Dict[str, Any], Any]) -> Any:
-    """Sort a list or dictionary recursively.
-    
-    This function is used to create comparable job representations by sorting all nested structures.
-    
-    Args:
-        obj (Union[List[Any], Dict[str, Any], Any]): Object to sort recursively
-
-    Returns:
-        Any: Sorted object with all nested structures sorted
-    """
-    if isinstance(obj, dict):
-        return sorted((k, sort_rec(v)) for k, v in obj.items())
-    if isinstance(obj, list):
-        return sorted(sort_rec(x) for x in obj)
-    else:
-        return obj
     
 def get_comparable_job(job_data: Dict[str, Any]) -> Any:
     """Create a comparable representation of the job by extracting the used sequences.
