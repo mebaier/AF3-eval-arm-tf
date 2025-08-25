@@ -236,7 +236,7 @@ def check_interface(pdb_id, chain_X, chain_Y, data_dir, min_atoms=10, max_distan
 
     atom_counter = 0
     for _,row in df.iterrows():
-        if (row['Chain_A'] == chain_X and row['Chain_B'] == chain_Y) or (row['Chain_A'] == chain_Y and row['Chain_B'] == chain_X):
+        if row['PDB_ID'] == pdb_id.upper() and ((row['Chain_A'] == chain_X and row['Chain_B'] == chain_Y) or (row['Chain_A'] == chain_Y and row['Chain_B'] == chain_X)):
             if row['Distance'] <= max_distance:
                 atom_counter += 1
 
