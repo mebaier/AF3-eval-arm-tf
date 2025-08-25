@@ -1,6 +1,7 @@
 import pandas as pd
 from typing import List, Tuple, Any, Dict
 import os, hashlib
+from pathlib import Path
 
 def create_all_pairs(arm_df: pd.DataFrame, tf_df: pd.DataFrame) -> pd.DataFrame:
     """Create a dataframe with all possible pairs from the cartesian product of the two dataframes arm_df and tf_df.
@@ -208,3 +209,35 @@ def get_chain_id(l: int) -> str:
         l -= 26
     id += chr(ord('A') + l)
     return id
+
+def check_interface(pdb_id, chain_X, chain_Y, data_dir, min_atoms=10, max_distance=5) -> bool:
+    """check if in the specified pdb there is an interface between chain_X and chain_Y
+    using Gregors data
+
+    Args:
+        pdb_id (_type_): _description_
+        chain_A (_type_): _description_
+        chain_B (_type_): _description_
+
+    Returns:
+        bool: _description_
+    """
+    # find files matching pattern and check for atom pairs within 5A between the two chains
+    files = list(Path(data_dir).rglob(f"{str.upper(pdb_id)}_detailed_interactions.csv"))
+
+    if len(files) > 1:
+        print(f"ERROR: for {pdb_id}, multiple files were found.")
+        return False
+    elif len(files) == 0:
+        print(f"ERROR: for {pdb_id}, no files were found.")
+        return False
+
+    df = pd.read_csv(files[0], sep=',')
+
+    atom_counter = 0
+    for _,row in df.iterrows():
+        if (row['Chain_A'] == chain_X and row['Chain_B'] == chain_Y) or (row['Chain_A'] == chain_Y and row['Chain_B'] == chain_X):
+            if row['Distance'] <= max_distance:
+                atom_counter += 1
+
+    return atom_counter >= min_atoms
