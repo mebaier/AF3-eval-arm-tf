@@ -4,6 +4,30 @@ from typing import List, Dict
 import pandas as pd
 from collections import defaultdict
 
+amino_acids = [
+    "A",  # Alanine
+    "R",  # Arginine
+    "N",  # Asparagine
+    "D",  # Aspartic acid
+    "C",  # Cysteine
+    "E",  # Glutamic acid
+    "Q",  # Glutamine
+    "G",  # Glycine
+    "H",  # Histidine
+    "I",  # Isoleucine
+    "L",  # Leucine
+    "K",  # Lysine
+    "M",  # Methionine
+    "F",  # Phenylalanine
+    "P",  # Proline
+    "S",  # Serine
+    "T",  # Threonine
+    "W",  # Tryptophan
+    "Y",  # Tyrosine
+    "V",  # Valine
+]
+
+
 def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif"):
     """
     Download a PDB structure from the online PDB database.
@@ -122,7 +146,6 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
         sequences = []
         current_chain = None
         current_sequence = ""
-
         for line in fasta_content.split('\n'):
             if line.startswith('>'):
                 # Save previous sequence if exists
@@ -146,6 +169,9 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
                 current_sequence = ""
             else:
                 # Accumulate sequence lines
+                seq = line.strip()
+                if not all(c in amino_acids for c in seq):
+                    raise Exception(f"sequence contains non-standard amino acids or nucleotides: {seq}, ID: {pdb_id}")
                 current_sequence += line.strip()
 
         # Add final sequence(s)
@@ -226,6 +252,26 @@ def int_to_base36(n: int) -> str:
             return res
 
 def deduplicate(strings: list[str]) -> list[str]:
+    """
+    Remove duplicates from a list of strings by appending base36 suffixes to duplicates.
+
+    This function processes a list of strings and ensures all elements in the result
+    are unique. When duplicates are encountered, they are made unique by appending
+    a base36-encoded suffix (starting from 'a' for the first duplicate, 'b' for the
+    second, etc.).
+
+    Parameters:
+    -----------
+    strings : list[str]
+        List of strings that may contain duplicates
+
+    Returns:
+    --------
+    list[str]
+        List of unique strings with duplicates renamed using base36 suffixes.
+        The order of first occurrences is preserved.
+        Example: ['A', 'B', 'Aa', 'C', 'Ab'] for input ['A', 'B', 'A', 'C', 'A']
+    """
     seen = defaultdict(int)
     used = set(strings)
     result = []

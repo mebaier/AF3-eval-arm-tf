@@ -156,44 +156,6 @@ def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, mi
         df.at[ind, 'num_disordered_regions'] = num_disordered_regions
     return df
 
-def create_job_list_from_filtered_report(report_df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """Create a job list from filtered report DataFrame.
-
-    Args:
-        report_df (pd.DataFrame): DataFrame containing filtered protein data with columns
-                                including 'Entry ID', 'Entity Polymer Type', 'Sequence',
-                                and 'Total Number of polymer Entity Instances (Chains) per Entity'
-
-    Returns:
-        List[Dict[str, Any]]: List of job dictionaries, each containing:
-            - 'name' (str): Entry ID
-            - 'seq_list' (List[Dict[str, str]]): List of sequence dictionaries with 'chain_id' and 'sequence'
-    """
-    job_name_list = report_df['Entry ID'].unique().tolist()
-
-    job_list = []
-    for job_name in job_name_list:
-        job_dict = dict()
-        job_dict['name'] = job_name
-        seq_list = []
-        b = False
-        l = 0
-        for _, row in report_df[report_df['Entry ID'] == job_name].iterrows():
-            if not row['Entity Polymer Type'] == 'Protein':
-                # FIXME: handle with AF
-                b = True
-                print(f"Skipping job with non-protein entity {row['Entry ID']}")
-                break
-            for i in range(int(row['Total Number of polymer Entity Instances (Chains) per Entity'])):
-                seq_list.append({'chain_id' : get_chain_id(l), 'sequence': row['Sequence']})
-                l += 1
-        
-        if b:
-            continue
-        job_dict['seq_list'] = seq_list
-        job_list.append(job_dict)
-    return job_list
-
 def get_chain_id(l: int) -> str:
     """Generate chain ID from index.
 

@@ -469,93 +469,6 @@ def create_job_batch_id_list(pair_df: pd.DataFrame, id_list: List[Tuple[str, str
     
     return new_jobs
 
-def create_job_batch_sequences_dict(job_list: List[Dict[str, Any]],
-                               job_dirs: List[str], token_limit: int = 5120) -> List[Dict[str, Any]]:
-    """Create a batch of AlphaFold jobs from a list of job dictionaries containing sequence data.
-
-    This function creates AlphaFold jobs from a list of job dictionaries, each containing
-    a job name and a list of protein sequences with chain IDs. It avoids creating duplicate
-    jobs by checking against existing jobs in the specified directories and filters out
-    jobs that exceed the token limit.
-
-    Args:
-        job_list (List[Dict[str, Any]]): List of job dictionaries, each containing:
-                                        - 'name' (str): Name for the AlphaFold job
-                                        - 'seq_list' (List[Dict[str, str]]): List of sequence dictionaries,
-                                          each with 'chain_id' and 'sequence' keys
-        job_dirs (List[str]): List of directories to search for existing jobs to avoid duplicates
-        token_limit (int, optional): Maximum total sequence length allowed for a job.
-                                   Jobs with combined sequence length exceeding this limit
-                                   will be skipped. Defaults to 5120.
-
-    Returns:
-        List[Dict[str, Any]]: List of newly created AlphaFold job dictionaries in alphafold3 format.
-                             Each job dictionary contains:
-                             - 'name': Job name as specified in input
-                             - 'sequences': List of protein specifications with chain IDs
-                             - 'dialect': Set to 'alphafold3'
-                             - 'version': Set to 1
-                             - 'modelSeeds': List containing default seed
-
-    Note:
-        - Jobs exceeding the token limit are automatically skipped with a warning message
-        - Duplicate jobs (based on sequence content) are avoided by comparing against existing jobs
-        - Uses create_alphafold_job_ms helper function to create jobs in alphafold3 format
-        - Supports multi-chain protein complexes with custom chain IDs
-
-    Raises:
-        KeyError: If required keys ('name', 'seq_list') are missing from job dictionaries
-        ValueError: If sequence list is empty in any job dictionary
-    """
-    new_jobs = []
-    prev_jobs = []
-    for dir in job_dirs:
-        prev_jobs += collect_created_jobs(dir)
-
-    for i in range(len(prev_jobs)):
-        prev_jobs[i] = (prev_jobs[i]['name'], get_comparable_job(prev_jobs[i]))
-
-    total_created = 0
-    duplicates = 0
-
-    for job_dict in job_list:
-
-        length = 0
-
-        for seq_dict in job_dict['seq_list']:
-            length += len(seq_dict['sequence'])
-
-        if length > token_limit:
-            print(f"Skipping because of token limit: {job_dict['name']}")
-            continue
-
-        # Create job using the helper function
-        job = create_alphafold_job_ms(job_dict['name'], job_dict['seq_list'])
-
-        # check if job was already created earlier
-        job_comparable = get_comparable_job(job)
-        if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
-            # no duplicate job found
-            total_created += 1
-            prev_jobs.append(get_comparable_job(job))
-            new_jobs.append(job)
-            continue
-        else:
-            matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
-            if not job_dict['name'] in matches:
-                print(f"Skipping duplicate job UNDER DIFFERENT ID: {job_dict['name']}. Duplicate IDs: {matches}")
-                adjust_job_id([m.lower() for m in matches + [job_dict['name']]], ["/home/markus/MPI_local/HPC_results_full"], "/home/markus/MPI_local/HPC_results_full/copied_jobs")
-            else:
-                print(f"Skipping duplicate job: {job_dict['name']}. Duplicate IDs: {matches}")
-            duplicates += 1
-            continue
-
-    # Print the number of jobs created in each category
-    print(f"Skipped {duplicates} duplicate jobs.")
-    print(f"Created {len(new_jobs)} new jobs total.")
-
-    return new_jobs
-
 def adjust_job_id(job_ids: list, source_results_dirs: List[str], target_results_dir: str) -> None:
     """For the list of job IDs, check if at least one result directory with an ID in the list exists in any of the source_results_dirs.
     For IDs that don't have an existing directory, create these directories in target_results_dir by copying the existing dir and renaming it.
@@ -787,7 +700,8 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
             continue
 
         # Create job using the helper function
-        job = create_alphafold_job_ms(pdb_id, sequences)
+        job_name = pdb_id
+        job = create_alphafold_job_ms(job_name, sequences)
 
         # check if job was already created earlier
         job_comparable = get_comparable_job(job)
@@ -796,11 +710,16 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
             total_created += 1
             prev_jobs.append(get_comparable_job(job))
             new_jobs.append(job)
+            continue
         else:
             matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
-            print(f"Skipping duplicate job: {pdb_id}")
-            print(f"Duplicate IDs: {matches}")
+            if not job_name in matches: # pdb_id is name
+                print(f"Skipping duplicate job UNDER DIFFERENT ID: {job_name}. Duplicate IDs: {matches}")
+                adjust_job_id([m.lower() for m in matches + [job_name]], ["/home/markus/MPI_local/HPC_results_full"], "/home/markus/MPI_local/HPC_results_full/copied_jobs")
+            else:
+                print(f"Skipping duplicate job: {job_name}. Duplicate IDs: {matches}")
             duplicates += 1
+            continue
 
     # Print the number of jobs created in each category
     print(f"Skipped {duplicates} duplicate jobs.")
