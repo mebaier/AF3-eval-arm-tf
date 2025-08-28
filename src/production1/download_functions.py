@@ -28,7 +28,7 @@ amino_acids = [
 ]
 
 
-def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif", debug=False):
+def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif", cache_dir=None, debug=False):
     """
     Download a PDB structure from the online PDB database.
 
@@ -67,18 +67,28 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
 
     output_path = os.path.join(output_dir, filename)
 
-    # Check if file already exists
-    if os.path.exists(output_path):
-        return output_path
+    # Determine cache path - use cache_dir if provided, otherwise use output_dir
+    cache_location = cache_dir if cache_dir is not None else output_dir
+    cache_path = os.path.join(cache_location, filename)
+
+    # Check if file already exists in cache
+    if os.path.exists(cache_path):
+        return cache_path
 
     try:
         # Download the file
         response = requests.get(url, timeout=30)
         response.raise_for_status()  # Raises an HTTPError for bad responses
 
-        # Save the file
+        # Save the file to output dir and cache dir
         with open(output_path, 'w') as f:
             f.write(response.text)
+            f.close()
+
+        if not cache_path == output_path:
+            with open(cache_path, 'w') as f:
+                f.write(response.text)
+                f.close()
 
         if debug:
             print(f"Successfully downloaded {filename} to {output_path}")
@@ -91,7 +101,7 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
         print(f"Unexpected error: {e}")
         return None
 
-def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif", debug=True):
+def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif", cache_dir=None, debug=False):
     downloaded_count = 0
     failed_count = 0
 
@@ -101,7 +111,8 @@ def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/dat
         if pd.isna(pdb_id):  # Skip NaN values
             continue
 
-        result = download_pdb_structure(pdb_id, output_dir, file_format)
+        cache_location = cache_dir if cache_dir is not None else output_dir
+        result = download_pdb_structure(pdb_id, output_dir, file_format, cache_location, debug)
         if result:
             downloaded_count += 1
         else:
