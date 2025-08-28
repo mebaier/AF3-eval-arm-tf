@@ -241,7 +241,7 @@ def format_chain_string(chain_str: str) -> str:
     chain_str = chain_str.replace('[', '')
     chain_str = chain_str.replace(']', '')
     chain_str = chain_str.upper()
-    chain_str = chain_str.strip()
+    chain_str = chain_str.replace(' ', '')
     return chain_str
 
 def int_to_base36(n: int) -> str:
