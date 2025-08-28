@@ -28,7 +28,7 @@ amino_acids = [
 ]
 
 
-def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif"):
+def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif", debug=False):
     """
     Download a PDB structure from the online PDB database.
 
@@ -80,7 +80,8 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
         with open(output_path, 'w') as f:
             f.write(response.text)
 
-        print(f"Successfully downloaded {filename} to {output_path}")
+        if debug:
+            print(f"Successfully downloaded {filename} to {output_path}")
         return output_path
 
     except requests.exceptions.RequestException as e:
@@ -90,7 +91,7 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
         print(f"Unexpected error: {e}")
         return None
 
-def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif"):
+def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/data/PDB", file_format="cif", debug=True):
     downloaded_count = 0
     failed_count = 0
 
@@ -106,11 +107,12 @@ def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/dat
         else:
             failed_count += 1
 
-    print(f"Successfully processed: {downloaded_count}")
-    print(f"Failed downloads: {failed_count}")
-    print(f"Total processed: {len([pdb_id for pdb_id in pdb_ids if not pd.isna(pdb_id)])}")
+    if debug:
+        print(f"Successfully processed: {downloaded_count}")
+        print(f"Failed downloads: {failed_count}")
+        print(f"Total processed: {len([pdb_id for pdb_id in pdb_ids if not pd.isna(pdb_id)])}")
 
-def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
+def download_pdb_sequence(pdb_id, debug=False) -> List[Dict[str, str]]:
     """
     Download the amino acid sequences for each chain in a PDB structure.
 
@@ -196,7 +198,8 @@ def download_pdb_sequence(pdb_id) -> List[Dict[str, str]]:
                 })
 
         if sequences:
-            print(f"Successfully downloaded sequences for {pdb_id}: {len(sequences)} chain(s)")
+            if debug:
+                print(f"Successfully downloaded sequences for {pdb_id}: {len(sequences)} chain(s)")
             return sequences
         else:
             print(f"No sequences found in FASTA data for {pdb_id}")
