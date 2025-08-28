@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import sklearn
+from typing import Set, Tuple, List
 
 def create_scatter_plot_colour(df: pd.DataFrame, x_metric: str, y_metric: str, color_metric: str, 
                         title: str = '', cmap: str = 'viridis', alpha: float = 0.7, size: int = 50, ax=None, corr=False) -> None:
@@ -506,3 +508,99 @@ def create_double_violin_plot(dataset1, dataset1_name, dataset2, dataset2_name,
     plt.tight_layout()
     
     return fig, ax
+
+def plot_roc(df: pd.DataFrame, pos: Set[str], neg: Set[str], param_name: str, min_val: float, max_val: float, 
+             sampling: int = 1000, direction: str = 'up', plot_title: str = '', ax=None) -> Tuple[List[float], List[float]]:
+    """Calculate and plot the ROC curve based on a specified parameter.
+    
+    This function evaluates the performance of a binary classifier by varying a threshold parameter
+    and calculating the True Positive Rate (TPR) and False Positive Rate (FPR) at each threshold.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing the parameter to evaluate and pair_id column
+        pos (Set[str]): Set of positive example pair_ids (ground truth positive cases)
+        neg (Set[str]): Set of negative example pair_ids (ground truth negative cases)
+        param_name (str): Name of the column in df to use as the classification parameter
+        min_val (float): Minimum threshold value to evaluate
+        max_val (float): Maximum threshold value to evaluate
+        sampling (int, optional): Number of threshold points to sample between min and max. Defaults to 1000.
+        direction (str, optional): Direction of classification - 'up' means values >= threshold are positive,
+                                  'down' means values < threshold are positive. Defaults to 'up'.
+        plot_title (str, optional): Title for the ROC curve plot. If empty, a default title is used. Defaults to ''.
+        ax (matplotlib.axes.Axes, optional): Axes object to plot on. If None, creates new figure.
+                                   
+    Returns:
+        Tuple[List[float], List[float]]: Lists of FPR and TPR values that make up the ROC curve
+    """
+    if ax is None:
+        # Print the size of positive and negative sets for verification    
+        print(f"Number of positive examples: {len(pos)}")
+        print(f"Number of negative examples: {len(neg)}")
+        plt.figure(figsize=(8, 8))
+        ax = plt.gca()
+        show_plot = True
+    else:
+        show_plot = False
+
+    # Calculate step size based on range and sampling
+    step = (max_val - min_val) / sampling
+    if step <= 0:
+        raise ValueError("max_val must be greater than min_val")
+    
+    # Lists to store TPR and FPR values
+    tpr_list = []
+    fpr_list = []
+    
+    for i in range(sampling + 1):
+        sep_val = min_val + (i * step)
+        
+        if direction == 'up':
+            calc_pos = set(df[df[param_name] >= sep_val]['pair_id'].tolist())
+            calc_neg = set(df[df[param_name] < sep_val]['pair_id'].tolist())
+        elif direction == 'down':
+            calc_pos = set(df[df[param_name] < sep_val]['pair_id'].tolist())
+            calc_neg = set(df[df[param_name] >= sep_val]['pair_id'].tolist())
+        else:
+            raise ValueError("direction must be either 'up' or 'down'")
+        
+        # Calculate confusion matrix values
+        TP_num = len(calc_pos.intersection(pos))
+        FP_num = len(calc_pos.intersection(neg))
+        TN_num = len(calc_neg.intersection(neg))
+        FN_num = len(calc_neg.intersection(pos))
+        
+        # Avoid division by zero
+        TPR = TP_num / max(TP_num + FN_num, 1)
+        FPR = FP_num / max(FP_num + TN_num, 1)
+        
+        tpr_list.append(TPR)
+        fpr_list.append(FPR)
+    
+    # Plot the ROC curve
+    ax.plot(fpr_list, tpr_list, 'b-', linewidth=2)
+    ax.plot([0, 1], [0, 1], 'k--', linewidth=2)  # Diagonal line representing random guess
+    
+    auc_value = sklearn.metrics.auc(fpr_list, tpr_list)
+    
+    # Add labels and title
+    ax.set_xlabel('False Positive Rate', fontsize=12)
+    ax.set_ylabel('True Positive Rate', fontsize=12)
+    
+    if plot_title:
+        title = plot_title
+    else:
+        title = f'ROC Curve for {param_name}'
+    
+    ax.set_title(f'{title}\nAUC = {auc_value:.3f}', fontsize=12)
+    
+    # Add grid and improve appearance
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+    
+    # Show plot only if not using subplots
+    if show_plot:
+        plt.tight_layout()
+        plt.show()
+    
+    return fpr_list, tpr_list
