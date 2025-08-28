@@ -126,7 +126,7 @@ def print_to_fasta(id: str, seq: str, path: str, comment: str = '') -> None:
         f.write(header)
         f.write(f"{seq}\n")        
 
-def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, min_length_region, iupred_path):
+def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, min_length_region, iupred_path, debug=False):
     import sys
     sys.path.append(iupred_path)
     import iupred3_lib
@@ -134,7 +134,12 @@ def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, mi
     os.makedirs(cache_dir, exist_ok=True)
     df['iupred3'] = None
     
+    i = 0
     for ind, row in df.iterrows():
+        if i % int(len(df)/20) == 0:
+            if debug:
+                print(f"Processed {i} of {len(df)} sequences.")
+        i += 1
         seq = str(row['Sequence'])
         if seq == '':
             df.at[ind, 'iupred3'] = ''
