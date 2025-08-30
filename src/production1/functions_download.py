@@ -73,6 +73,10 @@ def download_pdb_structure(pdb_id, output_dir="/home/markus/MPI_local/data/PDB",
 
     # Check if file already exists in cache
     if os.path.exists(cache_path):
+        if not os.path.exists(output_path):
+            # Copy file from cache to output path
+            with open(cache_path, 'r') as src, open(output_path, 'w') as dst:
+                dst.write(src.read())
         return cache_path
 
     try:
