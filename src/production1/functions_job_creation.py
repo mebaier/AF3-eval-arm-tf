@@ -1,7 +1,7 @@
 import pandas as pd
 import os, shutil, json, math, random, re
 from typing import List, Tuple, Dict, Any, Union
-from download_functions import download_pdb_sequence
+from functions_download import download_pdb_sequence
 
 def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
     """Write each AlphaFold job to an individual file.
@@ -660,7 +660,7 @@ def rewrite_af_job(af_job: Dict[str, Any]) -> Dict[str, Any]:
     # Create new job in alphafold3 dialect
     return create_alphafold_job(job_name, sequence1, sequence2, dialect='alphafold3')
 
-def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120):
+def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120, debug=False):
     """create a job batch from a list of PDB ids.
     Don't create duplicate jobs, don't create jobs that exceed token limit
 
@@ -714,10 +714,12 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
         else:
             matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
             if not job_name in matches: # pdb_id is name
-                print(f"Skipping duplicate job UNDER DIFFERENT ID: {job_name}. Duplicate IDs: {matches}")
+                if debug:
+                    print(f"Skipping duplicate job UNDER DIFFERENT ID: {job_name}. Duplicate IDs: {matches}")
                 adjust_job_id([m.lower() for m in matches + [job_name]], ["/home/markus/MPI_local/HPC_results_full"], "/home/markus/MPI_local/HPC_results_full/copied_jobs")
             else:
-                print(f"Skipping duplicate job: {job_name}. Duplicate IDs: {matches}")
+                if debug:
+                    print(f"Skipping duplicate job: {job_name}. Duplicate IDs: {matches}")
             duplicates += 1
             continue
 
