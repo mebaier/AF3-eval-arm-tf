@@ -570,3 +570,24 @@ def get_pdb_from_cif(cif_path: Path, pdb_dir: str) -> str:
     io.save(pdb_path)
 
     return pdb_path
+
+def annotate_AF_metrics(report_df: pd.DataFrame, results_dir: str) -> pd.DataFrame:
+    """Annotate a report DataFrame with AlphaFold metrics from job results.
+
+    This function takes a report DataFrame and annotates it with AlphaFold metrics
+    (iptm, ptm, ranking_score) by matching entries with completed jobs in the results directory.
+
+    Args:
+        report_df (pd.DataFrame): DataFrame to annotate, should contain columns needed to construct job names
+        results_dir (str): Directory containing AlphaFold job results
+
+    Returns:
+        pd.DataFrame: Report DataFrame with added af_iptm, af_ptm, af_ranking_score columns
+    """
+    report_df['job_name'] = report_df['job_name'].apply(lambda x: str(x).lower() if not pd.isna(x) else x)
+    results_df = pd.DataFrame(data=find_summary_files([results_dir]))
+    results_df = clean_results(results_df)
+
+    report_df = report_df.merge(results_df, on='job_name')
+
+    return report_df
