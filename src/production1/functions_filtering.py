@@ -194,10 +194,10 @@ def check_interface(pdb_id, chain_X, chain_Y, data_dir, min_atoms=10, max_distan
 
     if len(files) > 1:
         print(f"ERROR: for {pdb_id}, multiple files were found.")
-        return False
+        return pd.NA
     elif len(files) == 0:
         print(f"ERROR: for {pdb_id}, no files were found.")
-        return False
+        return pd.NA
 
     df = pd.read_csv(files[0], sep=',')
 
