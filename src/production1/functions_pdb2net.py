@@ -5,7 +5,7 @@ import hashlib
 
 def get_interfaces_pdb2net(path: str, min_atoms: int, max_distance: int, cache_dir: str|None = None):
     """Read all *_detailed_interaction files in path and create a df with the interfaces for each entry fulfilling the desired specs
-
+    Note: pdb2net uses the auth chain IDs (if available)
     Args:
         path (str): Path to the directory containing PDB2Net output folders
         min_atoms (int): Minimum number of atoms required for interface
