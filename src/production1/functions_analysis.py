@@ -391,9 +391,10 @@ def get_file_path(filename: str, search_dir: str):
         return file  # return the first match
     return False
 
-def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str, 
+def append_dockq_single_interface(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str,
                           all_uniprot: pd.DataFrame, pathmode: str, pdb_cache: str, dockq_cache: str) -> pd.DataFrame:
     """Calculate DockQ scores for protein structures and append results to dataframe.
+    Only usable if the structure has a single Interface!
 
     This function calculates DockQ scores for all structures in the input dataframe by comparing
     predicted models with native PDB structures using all possible chain mappings.
@@ -402,9 +403,9 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
         df (pd.DataFrame): DataFrame containing structure information with columns 'query_tf', 'query_arm', 'pdb_id'
         native_path_prefix (str): Path prefix for native PDB structure files
         model_results_dir (str): Directory containing predicted model files
-        all_uniprot (pd.DataFrame): UniProt dataframe for getting job names
+        all_uniprot (pd.DataFrame): UniProt dataframe for getting job names (only needed if pathmode='uniprot')
         pathmode (str): Mode for path resolution ('uniprot' or 'pdb')
-        pdb_cache (str): Directory for PDB file cache
+        pdb_cache (str): Directory for PDB file cache in .pdb format
         dockq_cache (str): Directory for DockQ results cache
 
     Returns:
@@ -445,6 +446,8 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
             model_path_cif, job_name = get_model_path_uniprot(row, model_results_dir, all_uniprot)
         elif pathmode == 'pdb':
             model_path_cif, job_name = get_model_path_pdb(row, model_results_dir)
+        else:
+            raise Exception(f"Invalid pathmode: {pathmode}")
 
         if not model_path_cif:
             no_model.append((model_path_cif, job_name))
@@ -469,7 +472,11 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
                 print(f"Error loading cache file {cache_file}: {e}")
 
         native = load_PDB(native_path_cif)
-        model = load_PDB(get_pdb_from_cif(model_path_cif, pdb_cache))
+        try:
+            model = load_PDB(get_pdb_from_cif(model_path_cif, pdb_cache))
+        except PDBIOException as e:
+            print(f"Exception: {e}")
+            continue
 
         native_chains = [chain.id for chain in model]
         model_chains = [chain.id for chain in native]
@@ -478,6 +485,7 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
         if len(model_chains) > 2:
             print(f"{row['pdb_id']}: Warning: Native structure ({native}) has more than two chains!")
 
+        # FIXME: why do we need to check all chain mappings?
         for chain_map in get_all_chain_mappings(model_chains, native_chains):
             try:
                 dockQ_complete = run_on_all_native_interfaces(model, native, chain_map=chain_map)
@@ -488,7 +496,7 @@ def append_dockq(df: pd.DataFrame, native_path_prefix: str, model_results_dir: s
 
         if chain_map_dict:
             best_chain_map = max(chain_map_dict.keys(), key=(lambda key: chain_map_dict[key][1]))
-            best_dockq_score = chain_map_dict[best_chain_map][1]
+            best_dockq_score = chain_map_dict[best_chain_map][1] # here we can use the second value since there is only one interface
             best_dockq_complete = chain_map_dict[best_chain_map]
 
             # Store results in the DataFrame
