@@ -660,7 +660,7 @@ def rewrite_af_job(af_job: Dict[str, Any]) -> Dict[str, Any]:
     # Create new job in alphafold3 dialect
     return create_alphafold_job(job_name, sequence1, sequence2, dialect='alphafold3')
 
-def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120, debug=False):
+def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120, debug=False) -> list:
     """create a job batch from a list of PDB ids.
     Don't create duplicate jobs, don't create jobs that exceed token limit
 
