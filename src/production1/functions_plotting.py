@@ -348,7 +348,6 @@ def create_overlaid_AF_violin_plot(dataset1, dataset1_name, dataset2, dataset2_n
     
     return fig, ax
 
-
 def create_single_AF_violin_plot(dataset, dataset_name, figsize=(10, 6)):
     """
     Create a single violin plot for AlphaFold metrics from one dataset.
@@ -467,7 +466,8 @@ def create_double_violin_plot(dataset1, dataset1_name, dataset2, dataset2_name,
     fig, ax : matplotlib objects
         Figure and axes objects for further customization
     """
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    fig = plt.figure(figsize=figsize)
+    ax = plt.gca()
     
     # Create data for dataset1 with metric1
     data1 = pd.DataFrame({
@@ -493,9 +493,7 @@ def create_double_violin_plot(dataset1, dataset1_name, dataset2, dataset2_name,
     ax.set_title(f'Distribution Comparison: {dataset1_name} ({metric1}) vs {dataset2_name} ({metric2})')
     ax.set_ylabel('Metric Values')
     ax.set_xlabel('')
-    
-    # Remove x-axis tick labels since there's only one comparison
-    ax.set_xticklabels([])
+    ax.set_xticklabels([metric1]) # FIXME: what if metric1 != metric2
     
     # Add text box with number of data points for both datasets
     n_points1 = len(dataset1)
@@ -555,11 +553,11 @@ def plot_roc(df: pd.DataFrame, pos: Set[str], neg: Set[str], param_name: str, mi
         sep_val = min_val + (i * step)
         
         if direction == 'up':
-            calc_pos = set(df[df[param_name] >= sep_val]['pair_id'].tolist())
-            calc_neg = set(df[df[param_name] < sep_val]['pair_id'].tolist())
+            calc_pos = set(df[df[param_name] >= sep_val]['Entry ID'].tolist())
+            calc_neg = set(df[df[param_name] < sep_val]['Entry ID'].tolist())
         elif direction == 'down':
-            calc_pos = set(df[df[param_name] < sep_val]['pair_id'].tolist())
-            calc_neg = set(df[df[param_name] >= sep_val]['pair_id'].tolist())
+            calc_pos = set(df[df[param_name] < sep_val]['Entry ID'].tolist())
+            calc_neg = set(df[df[param_name] >= sep_val]['Entry ID'].tolist())
         else:
             raise ValueError("direction must be either 'up' or 'down'")
         
