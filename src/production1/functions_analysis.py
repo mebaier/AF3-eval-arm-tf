@@ -3,7 +3,9 @@ import os, json, itertools
 from typing import List, Dict, Any, Tuple
 import matplotlib.pyplot as plt
 from pathlib import Path
-from Bio.PDB import MMCIFParser, PDBIO
+from Bio.PDB.MMCIFParser import MMCIFParser
+from Bio.PDB.PDBIO import PDBIO
+from Bio.PDB.PDBExceptions import PDBIOException
 
 def create_pair_id(row: pd.Series) -> str:
     """Create a pair ID from the job name by extracting the Uniprot IDs and sorting them.
@@ -20,52 +22,53 @@ def create_pair_id(row: pd.Series) -> str:
     parts = str(row['job_name']).split('_')
     return str(tuple(sorted([parts[0].upper(), parts[2].upper()])))
 
-def find_summary_files(directory: str) -> List[Dict[str, Any]]:
+def find_summary_files(directories: List[str]) -> List[Dict[str, Any]]:
     """Recursively find summary_confidences.json files.
-    
-    This function searches through the given directory and all subdirectories to find
+
+    This function searches through the given directories and all subdirectories to find
     AlphaFold summary confidence files and loads them into a list of dictionaries.
     If a job name is duplicated, don't load the job twice
 
     Args:
-        directory (str): Root directory to search for summary files
-        
+        directories (List[str]): List of root directories to search for summary files
+
     Returns:
         List[Dict[str, Any]]: List of dictionaries containing the contents of the summary files
     """
     all_jobs_data = []
     duplicates = 0
 
-    if not os.path.exists(directory):
-        raise FileNotFoundError(f"Directory '{directory}' does not exist")
-    if not os.path.isdir(directory):
-        raise NotADirectoryError(f"Path '{directory}' is not a directory")
+    for directory in directories:
+        if not os.path.exists(directory):
+            raise FileNotFoundError(f"Directory '{directory}' does not exist")
+        if not os.path.isdir(directory):
+            raise NotADirectoryError(f"Path '{directory}' is not a directory")
 
-    for root, dirs, files in os.walk(directory):
-        # Check for summary_confidences.json files
-        summary_files = [f for f in files if f.endswith('_summary_confidences.json')]
+        for root, dirs, files in os.walk(directory):
+            # Check for summary_confidences.json files
+            summary_files = [f for f in files if f.endswith('_summary_confidences.json')]
 
-        if summary_files:
-            for summary_file in summary_files:
-                # Extract job name from the filename
-                job_name = summary_file.replace('_summary_confidences.json', '')
-                
-                # Check if job with this job_name is already in all_jobs_data
-                if any(job.get("job_name") == job_name for job in all_jobs_data):
-                    duplicates += 1
-                    continue
-                
-                summary_path = os.path.join(root, summary_file)
-                
-                # Read the summary file
-                try:
-                    with open(summary_path) as f:
-                        data = json.load(f)
-                        # Add job folder name to the data
-                        data["job_name"] = job_name
-                        all_jobs_data.append(data)
-                except (json.JSONDecodeError, IOError) as e:
-                    print(f"Error reading {summary_path}: {e}")
+            if summary_files:
+                for summary_file in summary_files:
+                    # Extract job name from the filename
+                    job_name = summary_file.replace('_summary_confidences.json', '')
+
+                    # Check if job with this job_name is already in all_jobs_data
+                    if any(job.get("job_name") == job_name for job in all_jobs_data):
+                        duplicates += 1
+                        continue
+
+                    summary_path = os.path.join(root, summary_file)
+
+                    # Read the summary file
+                    try:
+                        with open(summary_path) as f:
+                            data = json.load(f)
+                            # Add job folder name to the data
+                            data["job_name"] = job_name
+                            all_jobs_data.append(data)
+                    except (json.JSONDecodeError, IOError) as e:
+                        print(f"Error reading {summary_path}: {e}")
     print(f"Duplicate jobs: {duplicates}")
     return all_jobs_data
 
