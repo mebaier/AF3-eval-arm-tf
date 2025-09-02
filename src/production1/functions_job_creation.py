@@ -2,6 +2,7 @@ import pandas as pd
 import os, shutil, json, math, random, re
 from typing import List, Tuple, Dict, Any, Union
 from functions_download import download_pdb_sequence
+from collections import defaultdict
 
 def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
     """Write each AlphaFold job to an individual file.
@@ -70,16 +71,16 @@ def get_comparable_job(job_data: Dict[str, Any]) -> Any:
     return sorted(comparable)
 
 def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
-    """Collect all jobs in a directory (all .json files are considered jobs).
-    
-    IMPORTANT: one file is considered to have one job!
-    
+    """Collect all jobs in a directory (all .json files are considered jobs). Not recursive
+
+    IMPORTANT: one file is considered to contain one job!
+
     Args:
         results_dir (str): Directory containing AlphaFold job files
-        
+
     Returns:
         List[Dict[str, Any]]: List of AlphaFold job dictionaries
-        
+
     Raises:
         OSError: If directory cannot be accessed
     """
@@ -90,10 +91,16 @@ def collect_created_jobs(results_dir: str) -> List[Dict[str, Any]]:
         if file_name.endswith('.json') and os.path.isfile(os.path.join(results_dir, file_name)):
             try:
                 with open(os.path.join(results_dir, file_name), 'r') as f:
+                    job_name = file_name.split('.json')[0] if isinstance(file_name, str) else None
+                    if job_name is None:
+                        raise Exception("Job has no name!")
                     data = json.load(f)
                     if isinstance(data, list):
+                        for datum in data:
+                            datum['name'] = job_name
                         collected_jobs += data
                     else:
+                        data['name'] = job_name
                         collected_jobs += [data]
                     
             except (json.JSONDecodeError, IOError) as e:
@@ -180,8 +187,11 @@ def create_alphafold_job_ms(job_name: str, sequences: List[Dict[str, str]], seed
 
     # Create sequence entries for all provided sequences
     sequence_entries = []
+    sequences = clean_chain_ids(sequences)
     for seq_data in sequences:
-        chain_id = re.sub(r'\[auth .+\]', '', seq_data['chain_id'])
+        chain_id = seq_data['chain_id']
+        if not bool(re.fullmatch(r'[A-Z0-9]+', chain_id)):
+            raise Exception(f"ID must only contain alphanumeric upper-case chars: {chain_id}")
         sequence_entries.append({
             'protein': {
                 'id': chain_id,
@@ -197,6 +207,90 @@ def create_alphafold_job_ms(job_name: str, sequences: List[Dict[str, str]], seed
         'dialect': 'alphafold3',
         'version': 1
     }
+
+def clean_chain_ids(sequences: List[Dict]) -> List[Dict]:
+    """
+    valid AF3 seq id uses only uppercase alphanumeric chars
+    """
+    # FIXME: these two steps can be added together
+    # 1. rewrite all incorrect IDs
+    correct_ids = []
+    for seq_data in sequences:
+        seq_data['chain_id'] = format_chain_ID(seq_data['chain_id'])
+        correct_ids.append(seq_data)
+
+    # 2. deduplicate list    
+    chain_ids = [s['chain_id'] for s in correct_ids]
+    remap = deduplicate(chain_ids)
+    ret = []
+    for seq_data in correct_ids:
+        seq_data['chain_id'] = remap[seq_data['chain_id']]
+        ret.append(seq_data)
+
+    return ret
+    
+def format_chain_ID(chain_str: str) -> str:
+    """Format an chain ID to a valid AF3 chain ID
+    Use the author ID if it is present, else the normal ID
+    Convert to upper-case
+    """
+    if 'auth' in chain_str:
+        m = re.search(r"\[auth\s+([a-zA-Z0-9]+)\]", chain_str)
+        if not m:
+            raise Exception(f"Error when extracting auth ID from: {chain_str}")
+        return m.group(1).upper()
+    else:
+        return chain_str.upper()
+
+def int_to_base36(n: int) -> str:
+    """Convert int to base36 string using [a-z0-9]."""
+    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    res = ""
+    while True:
+        n, r = divmod(n, 36)
+        res = chars[r] + res
+        if n == 0:
+            return res
+
+def deduplicate(strings: list[str]) -> dict[str, str]:
+    """
+    Remove duplicates from a list of strings by appending base36 suffixes to duplicates.
+
+    This function processes a list of strings and ensures all elements in the result
+    are unique. When duplicates are encountered, they are made unique by appending
+    a base36-encoded suffix (starting from 'a' for the first duplicate, 'b' for the
+    second, etc.).
+
+    Parameters:
+    -----------
+    strings : list[str]
+        List of strings that may contain duplicates
+
+    Returns:
+    --------
+    dict[str, str]
+        Dictionary mapping original strings to their deduplicated versions.
+        First occurrences remain unchanged, duplicates get base36 suffixes.
+        Example: {'A': 'A', 'B': 'B', 'A': 'Aa', 'C': 'C', 'A': 'Ab'} for input ['A', 'B', 'A', 'C', 'A']
+    """
+    seen = defaultdict(int)
+    used = set(strings)
+    result_mapping = {}
+
+    for original_string in strings:
+        if seen[original_string] == 0 and original_string not in [v for v in result_mapping.values()]:
+            result_mapping[original_string] = original_string
+        else:
+            i = seen[original_string]
+            new = f"{original_string}{int_to_base36(i)}"
+            while new in used:
+                i += 1
+                new = f"{original_string}{int_to_base36(i)}"
+            result_mapping[original_string] = new
+            used.add(new)
+            seen[original_string] = i
+        seen[original_string] += 1
+    return result_mapping
 
 def create_job_batch_scoreCategories(pair_df: pd.DataFrame, batch_size: int, categories: List[Tuple[float, float]], 
                                 job_dirs: List[str], column_name: str, token_limit: int = 5120) -> List[Dict[str, Any]]:
@@ -505,7 +599,14 @@ def adjust_job_id(job_ids: list, source_results_dirs: List[str], target_results_
             for root, dirs, files in os.walk(source_results_dir):
                 if job_id in dirs:
                     source_dir = os.path.join(root, job_id)
-                    break
+                    # check if job was actually finished by AF3
+                    summary_files = [f for f in os.listdir(source_dir) if f.endswith('_summary_confidences.json')]
+                    if not summary_files:
+                        print(f"Warning: No *_summary_confidences file found in source directory '{source_dir}'.")
+                        source_dir = None
+                        continue
+                    else:
+                        break
 
             if source_dir:
                 break
@@ -708,7 +809,85 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
         if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
             # no duplicate job found
             total_created += 1
-            prev_jobs.append(get_comparable_job(job))
+            prev_jobs.append((job_name, get_comparable_job(job)))
+            new_jobs.append(job)
+            continue
+        else:
+            matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
+            if not job_name in matches: # pdb_id is name
+                if debug:
+                    print(f"Skipping duplicate job UNDER DIFFERENT ID: {job_name}. Duplicate IDs: {matches}")
+                adjust_job_id([m.lower() for m in matches + [job_name]], ["/home/markus/MPI_local/HPC_results_full"], "/home/markus/MPI_local/HPC_results_full/copied_jobs")
+            else:
+                if debug:
+                    print(f"Skipping duplicate job: {job_name}. Duplicate IDs: {matches}")
+            duplicates += 1
+            continue
+
+    # Print the number of jobs created in each category
+    print(f"Skipped {duplicates} duplicate jobs.")
+    print(f"Created {len(new_jobs)} new jobs total.")
+
+    return new_jobs
+
+def create_job_batch_from_PDB_chains(pdb_id_df: pd.DataFrame, job_dirs: List[str], token_limit: int = 5120, debug=False) -> list:
+    """Create job batch from dataframe with columns <Entry ID> and <Chains>
+    The job name is in the format: pdb_id_<chain_id1>_<chain_id2>. In this name, the original chain IDs will be used.
+    To ensure compatibility with AF3, the chain IDs may be changed in the job itself!
+    Don't create duplicate jobs, don't create jobs that exceed token limit.
+    """
+    new_jobs = []
+    prev_jobs = []
+    for dir in job_dirs:
+        prev_jobs += collect_created_jobs(dir)
+
+    for i in range(len(prev_jobs)):
+        prev_jobs[i] = (prev_jobs[i]['name'], get_comparable_job(prev_jobs[i]))
+
+    total_created = 0
+    duplicates = 0
+
+    for _, row in pdb_id_df.iterrows():
+        
+        pdb_id = row['Entry ID']
+        chains = eval(row['Chains'])
+
+        length = 0
+
+        sequences = download_pdb_sequence(pdb_id)
+        
+        # Filter sequences to only include chains specified in the chains list
+        filtered_sequences = []
+        for seq_dict in sequences:
+            if seq_dict['chain_id'] in chains:
+                filtered_sequences.append(seq_dict)
+
+        sequences = filtered_sequences
+        
+        if len(sequences) == 0:
+            print(f"Empty sequence list: {pdb_id}")
+            continue
+
+        for seq_dict in sequences:
+            length += len(seq_dict['sequence'])
+
+        if length > token_limit:
+            print(f"Skipping because of token limit: {pdb_id} (length: {length})")
+            continue
+
+        # Create job using the helper function
+        job_name = pdb_id
+        for chain_id in sorted(chains):
+            job_name += f"_{chain_id}"
+
+        job = create_alphafold_job_ms(job_name, sequences)
+
+        # check if job was already created earlier
+        job_comparable = get_comparable_job(job)
+        if not any(existing_comparable[1] == job_comparable for existing_comparable in prev_jobs):
+            # no duplicate job found
+            total_created += 1
+            prev_jobs.append((job_name, get_comparable_job(job)))
             new_jobs.append(job)
             continue
         else:

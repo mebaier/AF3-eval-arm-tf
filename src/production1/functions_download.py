@@ -2,7 +2,6 @@ import requests, os, json, re
 from pathlib import Path
 from typing import List, Dict
 import pandas as pd
-from collections import defaultdict
 
 amino_acids = [
     "A",  # Alanine
@@ -128,14 +127,33 @@ def download_pdb_structures(pdb_ids: set, output_dir="/home/markus/MPI_local/dat
         print(f"Failed downloads: {failed_count}")
         print(f"Total processed: {len([pdb_id for pdb_id in pdb_ids if not pd.isna(pdb_id)])}")
 
-def download_pdb_sequence(pdb_id, debug=False) -> List[Dict[str, str]]:
+def add_sequences_to_list(chain, sequence, sequences_list):
+    """Helper function to add sequences to the list, handling both single chains and chain lists"""
+    if chain is None:
+        return
+
+    # Ensure chain is always a list for uniform processing
+    chain_list = chain if isinstance(chain, list) else [chain]
+
+    for chain_id in chain_list:
+        sequences_list.append({
+            'chain_id': chain_id,
+            'sequence': sequence
+        })
+
+def download_pdb_sequence(pdb_id, cache_dir=None, debug=False) -> List[Dict[str, str]]:
     """
     Download the amino acid sequences for each chain in a PDB structure.
+    Use as chain IDs the original authors mapping for compatibility with pdb2net tool
 
     Parameters:
     -----------
     pdb_id : str
         The 4-character PDB ID (e.g., "3ouw")
+    cache_dir : str, optional
+        Directory to cache downloaded FASTA files. If None, no caching is performed.
+    debug : bool, optional
+        Whether to print debug information (default: False)
 
     Returns:
     --------
@@ -146,17 +164,58 @@ def download_pdb_sequence(pdb_id, debug=False) -> List[Dict[str, str]]:
     # Ensure PDB ID is lowercase for URL
     pdb_id = pdb_id.lower()
 
-    # RCSB PDB REST API URL for FASTA sequences
-    url = f"https://www.rcsb.org/fasta/entry/{pdb_id}"
+    # Set up caching
+    fasta_content = None
+    cache_path = None
+    if cache_dir is not None:
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        cache_path = os.path.join(cache_dir, f"{pdb_id}.fasta")
+        
+        # Check if cached file exists
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, 'r') as f:
+                    fasta_content = f.read().strip()
+                if debug:
+                    print(f"Loaded FASTA from cache: {cache_path}")
+            except Exception as e:
+                if debug:
+                    print(f"Error reading cached file {cache_path}: {e}")
+                fasta_content = None
 
+    # Download if not cached or cache failed
+    if fasta_content is None:
+        # RCSB PDB REST API URL for FASTA sequences
+        url = f"https://www.rcsb.org/fasta/entry/{pdb_id}"
+
+        try:
+            # Download the FASTA file
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+
+            # Parse FASTA content
+            fasta_content = response.text.strip()
+            
+            # Save to cache if cache_dir is provided
+            if cache_path is not None:
+                try:
+                    with open(cache_path, 'w') as f:
+                        f.write(fasta_content)
+                    if debug:
+                        print(f"Saved FASTA to cache: {cache_path}")
+                except Exception as e:
+                    if debug:
+                        print(f"Warning: Could not save to cache {cache_path}: {e}")
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error downloading sequences for {pdb_id}: {e}")
+            return []
+        except Exception as e:
+            print(f"Error while downloading sequences for {pdb_id}: {e}")
+            return []
+
+    # Parse FASTA content
     try:
-        # Download the FASTA file
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-
-        # Parse FASTA content
-        fasta_content = response.text.strip()
-
         if not fasta_content:
             print(f"No sequence data found for PDB ID: {pdb_id}")
             return []
@@ -164,25 +223,12 @@ def download_pdb_sequence(pdb_id, debug=False) -> List[Dict[str, str]]:
         sequences = []
         current_chain = None
         current_sequence = ""
+
         for line in fasta_content.split('\n'):
             if line.startswith('>'):
                 # Save previous sequence if exists
-                if current_chain is not None:
-                    if isinstance(current_chain, list):
-                        # Multiple chains - add each chain separately with the same sequence
-                        for chain_id in current_chain:
-                            sequences.append({
-                                'chain_id': chain_id,
-                                'sequence': current_sequence
-                            })
-                    else:
-                        # Single chain
-                        sequences.append({
-                            'chain_id': current_chain,
-                            'sequence': current_sequence
-                        })
-
-               
+                add_sequences_to_list(current_chain, current_sequence, sequences)
+                
                 current_chain = extract_chain_ID(line)
                 current_sequence = ""
             else:
@@ -193,25 +239,7 @@ def download_pdb_sequence(pdb_id, debug=False) -> List[Dict[str, str]]:
                 current_sequence += line.strip()
 
         # Add final sequence(s)
-        if current_chain is not None:
-            if isinstance(current_chain, list):
-                # Multiple chains - add each chain separately with the same sequence
-                deduplicate(current_chain)
-                for chain_id in current_chain:
-                    if not bool(re.fullmatch(r'[A-Z0-9]+', chain_id)):
-                        raise Exception(f"ID must only contain alphanumeric upper-case chars: {chain_id}")
-                    sequences.append({
-                        'chain_id': chain_id,
-                        'sequence': current_sequence
-                    })
-            else:
-                # Single chain
-                if not bool(re.fullmatch(r'[A-Z0-9]+', current_chain)):
-                    raise Exception(f"ID must only contain alphanumeric upper-case chars: {current_chain}")
-                sequences.append({
-                    'chain_id': current_chain,
-                    'sequence': current_sequence
-                })
+        add_sequences_to_list(current_chain, current_sequence, sequences)
 
         if sequences:
             if debug:
@@ -227,7 +255,7 @@ def download_pdb_sequence(pdb_id, debug=False) -> List[Dict[str, str]]:
     except Exception as e:
         print(f"Error while processing sequences for {pdb_id}: {e}")
         return []
-    
+
 def extract_chain_ID(line: str) -> str|List[str]:
     """Extract chain ID(s) from header
     Header formats:
@@ -242,73 +270,16 @@ def extract_chain_ID(line: str) -> str|List[str]:
         if chain_part.startswith('Chains '):
             # Extract auth chain IDs from format like "Chains A[auth D], H[auth E]"
             chains_str = chain_part.replace('Chains ', '')
-            current_chain = [format_chain_string(entry) for entry in chains_str.split(',')]
+            current_chain = chains_str.split(',')
         elif chain_part.startswith('Chain '):
             # Single chain format
             chain_part = chain_part.replace('Chain ', '')
-            current_chain = [format_chain_string(chain_part)]
+            current_chain = [chain_part]
         else:
             raise Exception("No chain ID!")
     else:
         raise Exception("No chain ID!")
     return current_chain
-    
-def format_chain_string(chain_str: str) -> str:
-    chain_str = chain_str.replace('[', '')
-    chain_str = chain_str.replace(']', '')
-    chain_str = chain_str.upper()
-    chain_str = chain_str.replace(' ', '')
-    return chain_str
-
-def int_to_base36(n: int) -> str:
-    """Convert int to base36 string using [a-z0-9]."""
-    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-    res = ""
-    while True:
-        n, r = divmod(n, 36)
-        res = chars[r] + res
-        if n == 0:
-            return res
-
-def deduplicate(strings: list[str]) -> list[str]:
-    """
-    Remove duplicates from a list of strings by appending base36 suffixes to duplicates.
-
-    This function processes a list of strings and ensures all elements in the result
-    are unique. When duplicates are encountered, they are made unique by appending
-    a base36-encoded suffix (starting from 'a' for the first duplicate, 'b' for the
-    second, etc.).
-
-    Parameters:
-    -----------
-    strings : list[str]
-        List of strings that may contain duplicates
-
-    Returns:
-    --------
-    list[str]
-        List of unique strings with duplicates renamed using base36 suffixes.
-        The order of first occurrences is preserved.
-        Example: ['A', 'B', 'Aa', 'C', 'Ab'] for input ['A', 'B', 'A', 'C', 'A']
-    """
-    seen = defaultdict(int)
-    used = set(strings)
-    result = []
-
-    for s in strings:
-        if seen[s] == 0 and s not in result:
-            result.append(s)
-        else:
-            i = seen[s]
-            new = f"{s}{int_to_base36(i)}"
-            while new in used:
-                i += 1
-                new = f"{s}{int_to_base36(i)}"
-            result.append(new)
-            used.add(new)
-            seen[s] = i
-        seen[s] += 1
-    return result
 
 
 def get_pdb_chains_to_uniprot(pdb_id: str, cache_dir: str = ".pdb_cache") -> Dict[str, str]:
