@@ -314,7 +314,7 @@ def compare_statistics(pairs1: pd.DataFrame, pairs2: pd.DataFrame, results: pd.D
 def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     """Clean the AF results by removing rows with unreasonable values.
     
-    Ensures that ranking score is in range [0,1].
+    Ensures that ranking score is in range [-100,1.5] (see https://alphafoldserver.com/faq#how-do-i-interpret-all-the-outputs-in-the-downloaded-json-files)
 
     Args:
         df (pd.DataFrame): DataFrame containing AlphaFold results
@@ -328,9 +328,9 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     ret = df.copy(deep=True)
 
     # clean ranking score
-    ret = ret[(ret['ranking_score'] >= 0) & (ret['ranking_score'] <= 1)]
+    ret = ret[(ret['ranking_score'] >= -100) & (ret['ranking_score'] <= 1.5)]
     ranking_score_count = len(ret)
-    print(f"After filtering ranking_score [0,1]: {ranking_score_count} rows ({initial_count - ranking_score_count} removed)")
+    print(f"After filtering ranking_score [-100,1.5]: {ranking_score_count} rows ({initial_count - ranking_score_count} removed)")
 
     ret = ret[(ret['iptm'] >= 0) & (ret['iptm'] <= 1)]
     iptm_count = len(ret)
