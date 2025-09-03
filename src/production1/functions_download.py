@@ -144,7 +144,7 @@ def add_sequences_to_list(chain, sequence, sequences_list):
 def download_pdb_sequence(pdb_id, cache_dir=None, debug=False) -> List[Dict[str, str]]:
     """
     Download the amino acid sequences for each chain in a PDB structure.
-    Use as chain IDs the original authors mapping for compatibility with pdb2net tool
+    Use as chain IDs the original authors mapping!
 
     Parameters:
     -----------
@@ -229,7 +229,7 @@ def download_pdb_sequence(pdb_id, cache_dir=None, debug=False) -> List[Dict[str,
                 # Save previous sequence if exists
                 add_sequences_to_list(current_chain, current_sequence, sequences)
                 
-                current_chain = extract_chain_ID(line)
+                current_chain = get_chain_ID_from_header(line)
                 current_sequence = ""
             else:
                 # Accumulate sequence lines
@@ -256,8 +256,8 @@ def download_pdb_sequence(pdb_id, cache_dir=None, debug=False) -> List[Dict[str,
         print(f"Error while processing sequences for {pdb_id}: {e}")
         return []
 
-def extract_chain_ID(line: str) -> str|List[str]:
-    """Extract chain ID(s) from header
+def get_chain_ID_from_header(line: str) -> str|List[str]:
+    """Extract chain ID(s) from header line
     Header formats:
     >4HHB_1|Chain A|Hemoglobin subunit alpha|Homo sapiens (9606)
     >8H36_1|Chains A[auth D], H[auth E]|E3 ubiquitin-protein ligase RBX1|Homo sapiens (9606)
@@ -269,18 +269,25 @@ def extract_chain_ID(line: str) -> str|List[str]:
         # Handle multiple chains with auth IDs
         if chain_part.startswith('Chains '):
             # Extract auth chain IDs from format like "Chains A[auth D], H[auth E]"
-            chains_str = chain_part.replace('Chains ', '')
+            chains_str = extract_chain_ID(chain_part.replace('Chains ', ''))
             current_chain = chains_str.split(',')
         elif chain_part.startswith('Chain '):
             # Single chain format
-            chain_part = chain_part.replace('Chain ', '')
+            chain_part = extract_chain_ID(chain_part.replace('Chain ', ''))
             current_chain = [chain_part]
         else:
             raise Exception("No chain ID!")
     else:
         raise Exception("No chain ID!")
-    return current_chain
+    return [c.strip() for c in current_chain]
 
+def extract_chain_ID(id_str: str) -> str:
+    if 'auth' in id_str:
+        m = re.search(r"\[auth\s+([a-zA-Z0-9]+)\]", id_str)
+        if not m:
+            raise Exception(f"Error when extracting auth ID from: {id_str}")
+        return m.group(1)
+    return id_str
 
 def get_pdb_chains_to_uniprot(pdb_id: str, cache_dir: str = ".pdb_cache") -> Dict[str, str]:
     """

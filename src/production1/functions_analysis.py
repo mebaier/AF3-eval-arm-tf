@@ -1,11 +1,13 @@
 import pandas as pd
-import os, json, itertools
+import os, json, itertools, pickle, hashlib
 from typing import List, Dict, Any, Tuple
 import matplotlib.pyplot as plt
 from pathlib import Path
 from Bio.PDB.MMCIFParser import MMCIFParser
 from Bio.PDB.PDBIO import PDBIO
 from Bio.PDB.PDBExceptions import PDBIOException
+from DockQ.DockQ import load_PDB, run_on_all_native_interfaces, run_on_chains
+from functions_download import *
 
 def create_pair_id(row: pd.Series) -> str:
     """Create a pair ID from the job name by extracting the Uniprot IDs and sorting them.
@@ -356,7 +358,9 @@ def get_job_name(id_tf: str, id_arm: str, df: pd.DataFrame):
     length_tf = row_tf['Length'].iloc[0]
     return str.lower(f"{id_arm}_1-{length_arm}_{id_tf}_1-{length_tf}")
 
-def get_all_chain_mappings(native_chains, model_chains) -> List:
+def get_all_chain_mappings(native_chains, model_chains) -> List[dict]:
+    """native -> model
+    """
     all_mappings = []
 
     if len(native_chains) > len(model_chains):
@@ -392,7 +396,7 @@ def get_file_path(filename: str, search_dir: str):
     return False
 
 def append_dockq_single_interface(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str,
-                          all_uniprot: pd.DataFrame, pathmode: str, pdb_cache: str, dockq_cache: str) -> pd.DataFrame:
+                          all_uniprot: pd.DataFrame, pathmode: str, pdb_cache: str, dockq_cache: str) -> tuple[pd.DataFrame, list[str]]:
     """Calculate DockQ scores for protein structures and append results to dataframe.
     Only usable if the structure has a single Interface!
 
@@ -411,10 +415,6 @@ def append_dockq_single_interface(df: pd.DataFrame, native_path_prefix: str, mod
     Returns:
         pd.DataFrame: Input dataframe with added 'chain_map' and 'dockq_score' columns
     """
-    import pickle
-    import hashlib
-    from DockQ.DockQ import load_PDB, run_on_all_native_interfaces
-
     # Create cache directory if it doesn't exist
     os.makedirs(dockq_cache, exist_ok=True)
 
@@ -432,14 +432,13 @@ def append_dockq_single_interface(df: pd.DataFrame, native_path_prefix: str, mod
 
     # Process each structure
     for index, row in result_df.iterrows():
-
         if count % 10 == 0:
             print(f"Processed {count} of {len(result_df)} rows.")
         count += 1
 
         native_path_cif = f'{native_path_prefix}{row["pdb_id"].lower()}.cif'
         if not os.path.exists(native_path_cif):
-            no_native.append((native_path_cif, job_name))
+            no_native.append(native_path_cif)
             continue
 
         if pathmode == 'uniprot':
@@ -591,3 +590,172 @@ def annotate_AF_metrics(report_df: pd.DataFrame, results_dir: str) -> pd.DataFra
     report_df = report_df.merge(results_df, on='job_name')
 
     return report_df
+
+def append_dockq_two_chainIDs(df: pd.DataFrame, native_path_prefix: str, model_results_dir: str, job_dir: str,
+                          pdb_cache: str, dockq_cache: str) -> tuple[pd.DataFrame, list[str]]:
+    """Calculate DockQ scores for protein structures and append results to dataframe.
+
+    This function calculates DockQ scores for all structures in the input dataframe by comparing
+    predicted models with native PDB structures using all possible chain mappings.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing structure information with columns 'query_tf', 'query_arm', 'pdb_id'
+        native_path_prefix (str): Path prefix for native PDB structure files
+        model_results_dir (str): Directory containing predicted model files
+        pdb_cache (str): Directory for PDB file cache in .pdb format
+        dockq_cache (str): Directory for DockQ results cache
+
+    Returns:
+        pd.DataFrame: Input dataframe with added 'chain_map' and 'dockq_score' columns
+    """
+    # create cache dir if it does not exist
+    os.makedirs(dockq_cache, exist_ok=True)
+
+    # Create copies to avoid modifying the original dataframe
+    result_df = df.copy()
+    result_df['chain_map'] = None
+    result_df['dockq_score'] = None
+    result_df['dockq_complete'] = None
+
+    no_model = []
+
+    count = 0
+    for index, row in result_df.iterrows():
+
+        job_name = row['job_name']
+        pdb_id = row['pdb_id']
+
+        print(job_name)
+
+        if count % 10 == 0:
+            print(f"Processed {count} of {len(result_df)} rows.")
+        count += 1
+
+        native_path_cif = f'{native_path_prefix}{pdb_id.lower()}.cif'
+        if not os.path.exists(native_path_cif):
+            raise Exception("no native strucutre found")
+
+        model_path_cif, _ = get_model_path_pdb(row, model_results_dir)
+        if not model_path_cif:
+            no_model.append((model_path_cif, job_name))
+            continue
+
+        cache_key = hashlib.md5(f"{str(job_name)}_two_chains".encode()).hexdigest()
+        cache_file = os.path.join(dockq_cache, f"dockq_{cache_key}.pkl")
+
+        if os.path.exists(cache_file):
+            with open(cache_file, 'rb') as f:
+                cached_result = pickle.load(f)
+            result_df.at[index, 'chain_map'] = cached_result['chain_map']
+            result_df.at[index, 'dockq_score'] = cached_result['dockq_score']
+            result_df.at[index, 'dockq_complete'] = cached_result['dockq_complete']
+            print(f"used cached entry for: {job_name}")
+            continue
+
+        native_struct = load_PDB(native_path_cif)
+        try:
+            model_struct = load_PDB(get_pdb_from_cif(model_path_cif, pdb_cache))
+        except PDBIOException as e:
+            print(f"Exception: {e}")
+            continue
+
+        try:
+            model_chains, native_chains = find_job_chains_in_pdb(job_name, pdb_id, job_dir)
+        except FileNotFoundError as e:
+            print(e)
+            continue
+
+        if len(model_chains) > 2:
+            raise Exception("Only works for models with two chains!")
+
+        chain_map_dict = {}
+
+        for chain_map in get_all_chain_mappings(native_chains, model_chains):
+            try:
+                native_chains = []
+                model_chains = []
+                for native_id, model_id in chain_map.items():
+                    native_chains.append(native_struct[native_id])
+                    model_chains.append(model_struct[model_id])
+                dockQ_complete = run_on_chains(tuple(model_chains), tuple(native_chains), False, False, False, False)
+            except Exception as e:
+                print(f"Exception for {row['pdb_id']}: {repr(e)}.")
+                break
+            if dockQ_complete:
+                chain_map_dict[str(chain_map)] = dockQ_complete
+
+        best_dockq_score = 0
+        if chain_map_dict:
+            best_chain_map = max(chain_map_dict.keys(), key=(lambda key: chain_map_dict[key]['DockQ']))
+            best_dockq_score = chain_map_dict[best_chain_map]['DockQ'] # here we can use the total dockQ since there is only one interface (onyl two chains!)
+            best_dockq_complete = chain_map_dict[best_chain_map]
+
+            # Store results in the DataFrame
+            result_df.at[index, 'chain_map'] = best_chain_map
+            result_df.at[index, 'dockq_score'] = best_dockq_score
+            result_df.at[index, 'dockq_complete'] = best_dockq_complete
+
+            # Cache the results
+            cache_data = {
+                'chain_map': best_chain_map,
+                'dockq_score': best_dockq_score,
+                'dockq_complete': best_dockq_complete
+            }
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
+
+    # Report missing files
+    if no_model:
+        print(f"Missing model files: {len(no_model)}")
+        print(str([(t[0], t[1]) for t in no_model]))
+
+    return result_df, [str(t[1]) for t in no_model]
+
+def get_job_from_jobname(job_name, dir):
+    """search dir for the file named <job_name>.json (case insensitive)
+    read the job and return the json
+
+    Args:
+        job_name (str): name of the job file (without .json extension)
+        dir (str): directory path to search in
+
+    Returns:
+        dict: parsed JSON content of the job file
+
+    Raises:
+        FileNotFoundError: if no matching job file is found
+    """
+    dir_path = Path(dir)
+    target_filename = f"{job_name}.json"
+
+    # Search for the file case-insensitively
+    for file_path in dir_path.rglob("*.json"):
+        if file_path.name.lower() == target_filename.lower():
+            with open(file_path, 'r') as f:
+                return json.load(f)
+
+    raise FileNotFoundError(f"No job file found for job name '{job_name}' in directory '{dir}'")
+
+def find_job_chains_in_pdb(job_name: str, pdb_id: str, dir: str) -> tuple[set,set]:
+    """Find the chain IDs in the PDB of the sequences modeled in the AF job
+    Return the job chain IDs and the PDB chain IDs
+
+    Args:
+        job_name (_type_): _description_
+        pdb_id (str): PDB ID of job
+
+    Returns:
+        tuple: (model/job chains,native/pdb chains)
+    """
+    job = get_job_from_jobname(job_name, dir)
+    pdb_chains = download_pdb_sequence(pdb_id)
+    job_chain_ids = set()
+    pdb_chain_ids = set()
+    for seq in job['sequences']:
+        job_chain_ids.add(seq['protein']['id'])
+        sequence_job = seq['protein']['sequence']
+        for chain_pdb in pdb_chains:
+            if sequence_job == chain_pdb['sequence']:
+                pdb_chain_ids.add(chain_pdb['chain_id'])
+
+    return job_chain_ids, pdb_chain_ids
