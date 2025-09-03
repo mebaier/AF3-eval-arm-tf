@@ -4,7 +4,7 @@ from typing import List, Tuple, Dict, Any, Union
 from functions_download import download_pdb_sequence
 from collections import defaultdict
 
-def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3') -> None:
+def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir: str, dialect='alphafold3', exist_ok=False) -> None:
     """Write each AlphaFold job to an individual file.
     
     Each job is saved as a JSON file in the specified output directory with the job's name as the filename.
@@ -19,11 +19,11 @@ def write_af_jobs_to_individual_files(af_jobs: List[Dict[str, Any]], output_dir:
     Raises:
         SystemExit: If output directory already exists
     """
-    if os.path.exists(output_dir):
+    if os.path.exists(output_dir) and not exist_ok:
         print(f"ERROR: output directory '{output_dir}' already exists!")
         print("Aborting.")
         return
-    os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(output_dir, exist_ok=exist_ok)
     for job in af_jobs:
         file_name = f"{job['name']}.json"
         file_path = os.path.join(output_dir, file_name)
@@ -761,7 +761,7 @@ def rewrite_af_job(af_job: Dict[str, Any]) -> Dict[str, Any]:
     # Create new job in alphafold3 dialect
     return create_alphafold_job(job_name, sequence1, sequence2, dialect='alphafold3')
 
-def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120, debug=False) -> list:
+def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limit: int = 5120, debug=False) -> Tuple[list, list]:
     """create a job batch from a list of PDB ids.
     Don't create duplicate jobs, don't create jobs that exceed token limit
 
@@ -775,6 +775,7 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
     """
     new_jobs = []
     prev_jobs = []
+    reference_jobs = []
     for dir in job_dirs:
         prev_jobs += collect_created_jobs(dir)
 
@@ -813,6 +814,7 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
             new_jobs.append(job)
             continue
         else:
+            reference_jobs.append(job)
             matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
             if not job_name in matches: # pdb_id is name
                 if debug:
@@ -828,9 +830,9 @@ def create_job_batch_from_PDB_IDs(pdb_ids: List, job_dirs: List[str], token_limi
     print(f"Skipped {duplicates} duplicate jobs.")
     print(f"Created {len(new_jobs)} new jobs total.")
 
-    return new_jobs
+    return new_jobs, reference_jobs
 
-def create_job_batch_from_PDB_chains(pdb_id_df: pd.DataFrame, job_dirs: List[str], token_limit: int = 5120, debug=False) -> list:
+def create_job_batch_from_PDB_chains(pdb_id_df: pd.DataFrame, job_dirs: List[str], token_limit: int = 5120, debug=False) -> Tuple[list, list]:
     """Create job batch from dataframe with columns <Entry ID> and <Chains>
     The job name is in the format: pdb_id_<chain_id1>_<chain_id2>. In this name, the original chain IDs will be used.
     To ensure compatibility with AF3, the chain IDs may be changed in the job itself!
@@ -838,6 +840,7 @@ def create_job_batch_from_PDB_chains(pdb_id_df: pd.DataFrame, job_dirs: List[str
     """
     new_jobs = []
     prev_jobs = []
+    reference_jobs = [] # duplicate jobs as reference
     for dir in job_dirs:
         prev_jobs += collect_created_jobs(dir)
 
@@ -891,6 +894,7 @@ def create_job_batch_from_PDB_chains(pdb_id_df: pd.DataFrame, job_dirs: List[str
             new_jobs.append(job)
             continue
         else:
+            reference_jobs.append(job)
             matches = [ec[0] for ec in prev_jobs if ec[1] == job_comparable]
             if not job_name in matches: # pdb_id is name
                 if debug:
@@ -906,4 +910,4 @@ def create_job_batch_from_PDB_chains(pdb_id_df: pd.DataFrame, job_dirs: List[str
     print(f"Skipped {duplicates} duplicate jobs.")
     print(f"Created {len(new_jobs)} new jobs total.")
 
-    return new_jobs
+    return new_jobs, reference_jobs
