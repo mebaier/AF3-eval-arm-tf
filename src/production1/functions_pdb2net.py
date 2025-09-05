@@ -95,3 +95,91 @@ def normalize_uniprot_pair(uniprot_list):
     if any(pd.isna(x) for x in uniprot_list):
         return tuple()
     return tuple(sorted(uniprot_list))
+
+def annotate_interface_pdb(df: pd.DataFrame, pdb2net_dir: str, max_distance) -> pd.DataFrame:
+    """annotate residues that are involved in interface"""
+    df['interface_tf'] = pd.NA
+
+    for ind_df, row_df in df.iterrows():
+        job_name = row_df['job_name']
+
+        filename = job_name.upper() + "_MODEL_detailed_interactions.csv"
+        # Recursively search for the file
+        filepath = None
+        for root, _, files in os.walk(pdb2net_dir):
+            if filename in files:
+                filepath = os.path.join(root, filename)
+                break
+
+        if filepath is None:
+            raise Exception(f"no file found for {job_name} {filename}")
+
+        interactions_df = pd.read_csv(filepath)
+
+        valid_interactions = interactions_df[
+            (interactions_df['PDB_ID'] == filename.split('_detailed_interactions.csv')[0]) &
+            (interactions_df['Distance'] <= max_distance)
+        ]
+
+        if valid_interactions.empty:
+            continue
+
+        map_resnum_pdb_fasta = get_resnum_mapping(filepath) # entity ID B (we need TF)
+        map_resnum_pdb_fasta = map_resnum_pdb_fasta['2']
+
+        interface_list = [False] * len(row['Sequence_tf'])
+        for _, row in interactions_df.iterrows():
+            cif_num = row['Residue_B'].split(':')[0]
+            fasta_num = map_resnum_pdb_fasta[cif_num]
+            interface_list[fasta_num-1] = True
+
+        df.at[ind_df, 'interface_tf'] = interface_list
+
+    return df
+
+def annotate_interface_tf(df: pd.DataFrame, pdb2net_dir: str, max_distance) -> pd.DataFrame:
+    """annotate residues that are involved in interface"""
+    df = df.copy()
+    df['interface_tf'] = pd.NA
+
+    for ind_df, row_df in df.iterrows():
+        print("---")
+        print(row_df['Entry_tf'])
+        if row_df['Entry_tf'] == '':
+            continue
+
+        job_name = row_df['job_name']
+
+        filename = job_name.upper() + "_MODEL_detailed_interactions.csv"
+        # Recursively search for the file
+        filepath = None
+        for root, _, files in os.walk(pdb2net_dir):
+            if filename in files:
+                filepath = os.path.join(root, filename)
+                break
+
+        if filepath is None:
+            raise Exception(f"no file found for {job_name} {filename}")
+
+        interactions_df = pd.read_csv(filepath)
+
+        print(interactions_df)
+
+        valid_interactions = interactions_df[
+            (interactions_df['Distance'] <= max_distance)
+        ]
+
+        valid_interactions = valid_interactions.drop_duplicates(subset=['Residue_B'])
+
+        if valid_interactions.empty:
+            print('no valid interactions')
+            continue
+
+        interface_list = [False] * len(row_df['iupred3_tf'])
+        for _, row in valid_interactions.iterrows():
+            cif_num = int(row['Residue_B'].split(':')[0])
+            interface_list[cif_num-1] = True
+
+        df.at[ind_df, 'interface_tf'] = interface_list
+
+    return df
