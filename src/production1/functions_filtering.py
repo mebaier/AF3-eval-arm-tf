@@ -37,7 +37,7 @@ def create_all_pairs(arm_df: pd.DataFrame, tf_df: pd.DataFrame) -> pd.DataFrame:
 
     return pairs_df
 
-def find_subranges(data: List[float], threshold: float, min_length: int) -> List[Tuple[int, int]]:
+def find_subranges_min_length(data: List[float], threshold: float, min_length: int) -> Tuple[List[Tuple[int, int]], List[bool]]:
     """Find continuous subranges in data where values exceed the threshold for at least min_length positions.
 
     Args:
@@ -46,10 +46,13 @@ def find_subranges(data: List[float], threshold: float, min_length: int) -> List
         min_length (int): Minimum length a subrange must have to be included in results
 
     Returns:
-        List[Tuple[int, int]]: List of tuples containing start and end indices of subranges
+        Tuple[List[Tuple[int, int]], List[bool]]: Tuple containing:
+            - List of tuples with start and end indices of subranges
+            - Boolean array indicating which values are part of found subranges
     """
     subranges = []
     start = None
+    mask = [False] * len(data)
 
     for i, value in enumerate(data):
         if value >= threshold:
@@ -60,19 +63,20 @@ def find_subranges(data: List[float], threshold: float, min_length: int) -> List
             if start is not None:
                 if i - start >= min_length:
                     subranges.append((start, i - 1))
+                    # Mark positions in the mask
+                    for j in range(start, i):
+                        mask[j] = True
                 start = None
 
     # Check if we ended with an ongoing subrange
     if start is not None:
         if len(data) - start >= min_length:
             subranges.append((start, len(data) - 1))
+            # Mark positions in the mask
+            for j in range(start, len(data)):
+                mask[j] = True
 
-    return subranges
-
-assert find_subranges([1,1,2,4,5,6,2,3,1], 2, 3) == [(2,7)]
-assert find_subranges([1,1,2,4,5,6,2,3,1], 2, 20) == []
-assert find_subranges([], 2, 20) == []
-assert find_subranges([1,2,2,2,3,3,3,3,2,3,3,2,1,3,3,3], 3, 3) == [(4,7), (13,15)]
+    return subranges, mask
 
 def contains_any_annotation(cell_value: Any, annotations_list: List[str]) -> bool:
     """Check if any of the annotations are in the column value.
@@ -109,8 +113,6 @@ def print_to_fasta(id: str, seq: str, path: str, comment: str = '') -> None:
     Raises:
         OSError: If the directory cannot be created or file cannot be written
     """
-    import os
-    
     filename = f"{id}.fasta"
     full_path = os.path.join(path, filename)
     
@@ -133,6 +135,8 @@ def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, mi
     
     os.makedirs(cache_dir, exist_ok=True)
     df['iupred3'] = None
+    df['num_disordered_regions'] = None
+    df['disordered_regions_mask'] = None
     
     i = 0
     for ind, row in df.iterrows():
@@ -156,9 +160,11 @@ def add_iupred3(df: pd.DataFrame, type: str, smoothing, cache_dir, threshold, mi
             iupred3_str = ','.join(map(str, iupred3))
             with open(cache_file, 'w') as f:
                 f.write(iupred3_str)
-        num_disordered_regions = len(find_subranges(iupred3, threshold, min_length_region))
+        disordered_regions, disordered_regions_mask = find_subranges_min_length(iupred3, threshold, min_length_region)
+        num_disordered_regions  = len(disordered_regions)
         df.at[ind, 'iupred3'] = iupred3_str
         df.at[ind, 'num_disordered_regions'] = num_disordered_regions
+        df.at[ind, 'disordered_regions_mask'] = disordered_regions_mask
     return df
 
 def get_chain_id(l: int) -> str:
@@ -207,3 +213,10 @@ def check_interface(pdb_id, chain_X, chain_Y, data_dir, min_atoms=10, max_distan
                 atom_counter += 1
 
     return atom_counter >= min_atoms
+
+if __name__ == "__main__":
+    print("executing tests")
+    assert find_subranges_min_length([1,1,2,4,5,6,2,3,1], 2, 3) == ([(2,7)], [False,False,True,True,True,True,True,True,False])
+    assert find_subranges_min_length([1,1,2,4,5,6,2,3,1], 2, 20) == ([], [False,False,False,False,False,False,False,False,False])
+    assert find_subranges_min_length([], 2, 20) == ([], [])
+    assert find_subranges_min_length([1,2,2,2,3,3,3,3,2,3,3,2,1,3,3,3], 3, 3) == ([(4,7), (13,15)], [False,False,False,False,True,True,True,True,False,False,False,False,False,True,True,True])
