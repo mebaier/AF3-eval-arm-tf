@@ -10,7 +10,7 @@ from functions_download import *
 
 def create_pair_id(row: pd.Series) -> str:
     """Create a pair ID from the job name by extracting the Uniprot IDs and sorting them.
-    
+
     This function parses an AlphaFold job name to extract the protein IDs and creates a
     standardized pair identifier by sorting the IDs alphabetically.
 
@@ -76,7 +76,7 @@ def find_summary_files(directories: List[str]) -> List[Dict[str, Any]]:
 
 def remove_0(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
     """Remove all rows where the specified columns have a value of 0.
-    
+
     This function filters a DataFrame to keep only rows where the values in the specified columns are greater than 0.
 
     Args:
@@ -91,7 +91,7 @@ def remove_0(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
 
 def clean_results(df: pd.DataFrame) -> pd.DataFrame:
     """Clean the AF results by removing rows with unreasonable values.
-    
+
     Ensures that ranking score is in range [-100,1.5] (see https://alphafoldserver.com/faq#how-do-i-interpret-all-the-outputs-in-the-downloaded-json-files)
 
     Args:
@@ -120,7 +120,7 @@ def clean_results(df: pd.DataFrame) -> pd.DataFrame:
 
     total_removed = initial_count - final_count
     print(f"Total rows removed: {total_removed} ({total_removed/initial_count*100:.2f}%)")
-    
+
     return ret
 
 def get_job_name(id_tf: str, id_arm: str, df: pd.DataFrame):
@@ -536,3 +536,186 @@ def find_job_chains_in_pdb(job_name: str, pdb_id: str, dir: str) -> tuple[set,se
                 pdb_chain_ids.add(chain_pdb['chain_id'])
 
     return job_chain_ids, pdb_chain_ids
+
+def check_overlap_intf_diso(interface_list: list, disorder_list: list, min_length: int) -> bool:
+    """Check if any sequence of consecutive True values in interface_list overlaps 
+    with at least min_length consecutive True values in disorder_list.
+
+    Args:
+        interface_list (list): List of boolean values representing interface positions
+        disorder_list (list): List of boolean values representing disorder positions
+        min_length (int): Minimum required length of consecutive overlap
+
+    Returns:
+        bool: True if overlap of at least min_length is found, False otherwise
+
+    Raises:
+        ValueError: If lists have different lengths or are empty
+    """
+    # Check for errors
+    if len(interface_list) != len(disorder_list):
+        raise ValueError("Lists must have the same length")
+
+    if len(interface_list) == 0:
+        raise ValueError("Lists cannot be empty")
+
+    # Warning if min_length is too large
+    if min_length > len(interface_list):
+        print(f"Warning: min_length ({min_length}) is larger than list length ({len(interface_list)})")
+        return False
+
+    # Find all consecutive True sequences in interface_list
+    interface_sequences = []
+    start = None
+
+    for i, val in enumerate(interface_list):
+        if val and start is None:
+            start = i
+        elif not val and start is not None:
+            interface_sequences.append((start, i - 1))
+            start = None
+
+    # Don't forget the last sequence if it ends at the list end
+    if start is not None:
+        interface_sequences.append((start, len(interface_list) - 1))
+
+    # For each interface sequence, check overlap with disorder_list
+    for seq_start, seq_end in interface_sequences:
+        # Check each possible starting position within this sequence
+        for start_pos in range(seq_start, seq_end - min_length + 2):
+            end_pos = start_pos + min_length - 1
+
+            # Make sure we don't go beyond the sequence end
+            if end_pos > seq_end:
+                break
+
+            # Check if all positions in this range are True in disorder_list
+            if all(disorder_list[pos] for pos in range(start_pos, end_pos + 1)):
+                return True
+
+    return False
+
+def test_check_overlap():
+    """Test function for check_overlap with various scenarios"""
+
+    # Test 1: Basic overlap case - should return True
+    interface_list = [False, True, True, True, False, False]
+    disorder_list = [False, False, True, True, True, False]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == True, "Test 1 failed: Should find overlap of length 2"
+
+    # Test 2: No overlap - should return False
+    interface_list = [True, True, False, False, False, False]
+    disorder_list = [False, False, False, True, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == False, "Test 2 failed: Should find no overlap"
+
+    # Test 3: Exact minimum length overlap - should return True
+    interface_list = [False, True, True, True, False]
+    disorder_list = [False, False, True, True, False]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == True, "Test 3 failed: Should find exact minimum overlap"
+
+    # Test 4: Overlap shorter than minimum - should return False
+    interface_list = [False, True, True, False, False]
+    disorder_list = [False, False, True, False, False]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == False, "Test 4 failed: Overlap too short"
+
+    # Test 5: Multiple interface sequences, one overlaps - should return True
+    interface_list = [True, False, False, True, True, True]
+    disorder_list = [False, False, False, False, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == True, "Test 5 failed: Should find overlap in second sequence"
+
+    # Test 6: All True lists - should return True
+    interface_list = [True, True, True, True]
+    disorder_list = [True, True, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 3) == True, "Test 6 failed: All True should overlap"
+
+    # Test 7: Single element overlap with min_length 1 - should return True
+    interface_list = [False, True, False]
+    disorder_list = [False, True, False]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 1) == True, "Test 7 failed: Single element overlap"
+
+    # Test 8: Interface sequence at end of list - should return True
+    interface_list = [False, False, True, True, True]
+    disorder_list = [False, False, False, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == True, "Test 8 failed: End sequence overlap"
+
+    print("All basic tests passed!")
+
+def test_check_overlap_edge_cases():
+    """Test edge cases for check_overlap function"""
+
+    # Test error cases
+    try:
+        check_overlap_intf_diso([], [], 1)
+        assert False, "Should raise ValueError for empty lists"
+    except ValueError as e:
+        assert "cannot be empty" in str(e), "Wrong error message for empty lists"
+
+    try:
+        check_overlap_intf_diso([True, False], [True], 1)
+        assert False, "Should raise ValueError for different length lists"
+    except ValueError as e:
+        assert "same length" in str(e), "Wrong error message for different lengths"
+
+    # Test warning case (min_length too large)
+    interface_list = [True, True]
+    disorder_list = [True, True]
+    result = check_overlap_intf_diso(interface_list, disorder_list, 5)
+    assert result == False, "Should return False when min_length is too large"
+
+    # Test min_length equal to list length
+    interface_list = [True, True, True]
+    disorder_list = [True, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 3) == True, "Should work when min_length equals list length"
+
+    # Test with min_length of 0
+    interface_list = [True, False]
+    disorder_list = [False, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 0) == True, "Should return True for min_length 0 with any interface"
+
+    # Test all False lists
+    interface_list = [False, False, False]
+    disorder_list = [False, False, False]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 1) == False, "Should return False for all False lists"
+
+    # Test interface True but disorder False
+    interface_list = [True, True, True]
+    disorder_list = [False, False, False]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 1) == False, "Should return False when disorder is all False"
+
+    print("All edge case tests passed!")
+
+def test_check_overlap_complex_cases():
+    """Test complex scenarios for check_overlap function"""
+
+    # Test 1: Multiple short interface sequences, none overlap enough
+    interface_list = [True, False, True, False, True, True, False]
+    disorder_list = [False, True, False, True, False, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == False, "Test 1 failed: Found incorrect overlap"
+
+    # Test 2: Long sequences with partial overlaps
+    interface_list = [True, True, True, True, False, False, True, True]
+    disorder_list = [False, True, True, False, False, True, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 2) == True, "Test 2 failed: Should find overlap in middle"
+
+    # Test 3: Interface sequence spans entire list
+    interface_list = [True] * 10
+    disorder_list = [False] * 5 + [True] * 5
+    assert check_overlap_intf_diso(interface_list, disorder_list, 3) == True, "Test 3 failed: Should find overlap in second half"
+
+    # Test 4: Alternating pattern
+    interface_list = [True, False] * 5
+    disorder_list = [False, True] * 5
+    assert check_overlap_intf_diso(interface_list, disorder_list, 1) == False, "Test 4 failed: Alternating should not overlap"
+
+    # Test 5: Adjacent but not overlapping
+    interface_list = [True, True, False, False, False]
+    disorder_list = [False, False, True, True, True]
+    assert check_overlap_intf_diso(interface_list, disorder_list, 1) == False, "Test 5 failed: Adjacent should not overlap"
+
+    print("All complex case tests passed!")
+
+if __name__ == "__main__":
+    test_check_overlap()
+    test_check_overlap_edge_cases()
+    test_check_overlap_complex_cases()
+    print("All check_overlap tests completed successfully!")
