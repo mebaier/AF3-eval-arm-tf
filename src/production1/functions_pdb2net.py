@@ -2,7 +2,9 @@ import os
 import glob
 import pandas as pd
 import hashlib
+import pickle
 from functions_cif import *
+from pandas.errors import EmptyDataError
 
 def get_interfaces_pdb2net(path: str, min_atoms: int, max_distance: int, pdb_ids: set):
     """Read all *_detailed_interaction files in path and create a df with the interfaces for each entry fulfilling the desired specs
@@ -137,39 +139,73 @@ def annotate_interface_pdb(df: pd.DataFrame, pdb2net_dir: str, max_distance) -> 
 
     return df
 
-def annotate_interface_tf(df: pd.DataFrame, pdb2net_dir: str, max_distance) -> pd.DataFrame:
+def annotate_interface_tf(df: pd.DataFrame, pdb2net_dir: str, max_distance: int, cache_dir: str = None) -> pd.DataFrame:
     """annotate residues that are involved in interface"""
     df = df.copy()
     df['interface_tf'] = pd.NA
 
+    # Set default cache directory if not provided
+    if cache_dir is None:
+        cache_dir = os.path.join(os.path.dirname(pdb2net_dir), 'interface_cache')
+
+    # Create cache directory if it doesn't exist
+    os.makedirs(cache_dir, exist_ok=True)
+
     for ind_df, row_df in df.iterrows():
         print("---")
         print(row_df['Entry_tf'])
+        print(row_df['Entry_arm'])
         if row_df['Entry_tf'] == '':
             continue
 
         job_name = row_df['job_name']
 
-        filename = job_name.upper() + "_MODEL_detailed_interactions.csv"
-        # Recursively search for the file
-        filepath = None
-        for root, _, files in os.walk(pdb2net_dir):
-            if filename in files:
-                filepath = os.path.join(root, filename)
-                break
+        # Create cache file path using job_name and max_distance
+        cache_filename = f"{job_name}_{max_distance}.pkl"
+        cache_filepath = os.path.join(cache_dir, cache_filename)
 
-        if filepath is None:
-            raise Exception(f"no file found for {job_name} {filename}")
+        # Check if cache file exists and load it
+        if os.path.exists(cache_filepath):
+            try:
+                with open(cache_filepath, 'rb') as f:
+                    valid_interactions = pickle.load(f)
+            except (pickle.PickleError, IOError) as e:
+                print(f"Error loading cache file {cache_filepath}: {e}")
+                valid_interactions = None
+        else:
+            valid_interactions = None
 
-        interactions_df = pd.read_csv(filepath)
+        # If not cached, process the data
+        if valid_interactions is None:
+            filename = job_name.upper() + "_MODEL_detailed_interactions.csv"
+            # Recursively search for the file
+            filepath = None
+            for root, _, files in os.walk(pdb2net_dir):
+                if filename in files:
+                    filepath = os.path.join(root, filename)
+                    break
 
-        print(interactions_df)
+            if filepath is None:
+                raise Exception(f"no file found for {job_name} {filename}")
 
-        valid_interactions = interactions_df[
-            (interactions_df['Distance'] <= max_distance)
-        ]
+            try:
+                interactions_df = pd.read_csv(filepath)
+            except EmptyDataError as e:
+                print(f"EmptyDataError: {e}")
+                continue
 
-        valid_interactions = valid_interactions.drop_duplicates(subset=['Residue_B'])
+            valid_interactions = interactions_df[
+                (interactions_df['Distance'] <= max_distance)
+            ]
+
+            valid_interactions = valid_interactions.drop_duplicates(subset=['Residue_B'])
+
+            # Save to cache file
+            try:
+                with open(cache_filepath, 'wb') as f:
+                    pickle.dump(valid_interactions, f)
+            except (pickle.PickleError, IOError) as e:
+                print(f"Error saving cache file {cache_filepath}: {e}")
 
         if valid_interactions.empty:
             print('no valid interactions')
