@@ -70,24 +70,45 @@ def get_interfaces_pdb2net(path: str, min_atoms: int, max_distance: int, pdb_ids
                     (valid_interactions['Chain_A'] == chain_a) & 
                     (valid_interactions['Chain_B'] == chain_b)
                 ]
-                
+
+                # row_A = report_df[(report_df['Entry ID'] == entry_id) & (report_df['Auth Asym ID'] == chain_a)].iloc[0]
+                # row_B = report_df[(report_df['Entry ID'] == entry_id) & (report_df['Auth Asym ID'] == chain_b)].iloc[0]
+
                 if not pair_data.empty:
+
+                    # interface_mask_A = [False] * len(row_A['iupred3'])
+                    # interface_mask_B = [False] * len(row_B['iupred3'])
+                    interface_mask_A = [False]
+                    interface_mask_B = [False]
+                    # for _, row in pair_data.iterrows():
+                    #     cif2fasta = get_resnum_mapping_cif2fasta(row_A['model_path'])
+                    #     # print(cif2fasta)
+                    #     print(row_A['model_path'])
+                    #     cif_num_A = int(row['Residue_A'].split(':')[0])
+                    #     cif_num_B = int(row['Residue_B'].split(':')[0])
+                    #     fast_num_A = cif2fasta[chain_a][cif_num_A]
+                    #     fast_num_B = cif2fasta[chain_b][cif_num_B]
+                    #     interface_mask_A[int(fast_num_A)-1] = True
+                    #     interface_mask_B[int(fast_num_B)-1] = True
+
                     uniprot_a = pair_data['UniProt_A'].iloc[0]
                     uniprot_b = pair_data['UniProt_B'].iloc[0]
                     interface_id = str([str(chain_a), str(chain_b)])
-                    
+
                     results.append({
                         'Entry ID': entry_id,
                         'Interface ID': interface_id,
-                        'Uniprot IDs': [uniprot_a, uniprot_b]
+                        'Uniprot IDs': [uniprot_a, uniprot_b],
+                        'interface_mask_A': interface_mask_A,
+                        'interface_mask_B': interface_mask_B,
                     })
 
     # Create final DataFrame
     if results:
         result = pd.DataFrame(results)
     else:
-        result = pd.DataFrame(columns=['Entry ID', 'Interface ID', 'Uniprot IDs'])
-        
+        result = pd.DataFrame(columns=['Entry ID', 'Interface ID', 'Uniprot IDs', 'interface_mask_diso'])
+
     print(f"No model found for: {[e for e in pdb_ids]}")
 
     return result
@@ -126,7 +147,7 @@ def annotate_interface_pdb(df: pd.DataFrame, pdb2net_dir: str, max_distance) -> 
         if valid_interactions.empty:
             continue
 
-        map_resnum_pdb_fasta = get_resnum_mapping(filepath) # entity ID B (we need TF)
+        map_resnum_pdb_fasta = get_resnum_mapping_fasta2cif(filepath) # entity ID B (we need TF)
         map_resnum_pdb_fasta = map_resnum_pdb_fasta['2']
 
         interface_list = [False] * len(row['Sequence_tf'])
@@ -151,10 +172,12 @@ def annotate_interface_tf(df: pd.DataFrame, pdb2net_dir: str, max_distance: int,
     # Create cache directory if it doesn't exist
     os.makedirs(cache_dir, exist_ok=True)
 
+    c = 0
     for ind_df, row_df in df.iterrows():
-        print("---")
-        print(row_df['Entry_tf'])
-        print(row_df['Entry_arm'])
+        if c % max(1, len(df)//10) == 0:
+            print(f"{c}/{len(df)}")
+        c += 1
+        
         if row_df['Entry_tf'] == '':
             continue
 
@@ -191,8 +214,12 @@ def annotate_interface_tf(df: pd.DataFrame, pdb2net_dir: str, max_distance: int,
             try:
                 interactions_df = pd.read_csv(filepath)
             except EmptyDataError as e:
-                print(f"EmptyDataError: {e}")
-                continue
+                if os.path.exists(filepath):
+                    interactions_df = pd.DataFrame(columns=['Distance', 'Residue_B'])
+                else:
+                    print(f"EmptyDataError: {e}")
+                    print(filepath)
+                    continue
 
             valid_interactions = interactions_df[
                 (interactions_df['Distance'] <= max_distance)
@@ -207,11 +234,7 @@ def annotate_interface_tf(df: pd.DataFrame, pdb2net_dir: str, max_distance: int,
             except (pickle.PickleError, IOError) as e:
                 print(f"Error saving cache file {cache_filepath}: {e}")
 
-        if valid_interactions.empty:
-            print('no valid interactions')
-            continue
-
-        interface_list = [False] * len(row_df['iupred3_tf'])
+        interface_list = [False] * len(row_df['disordered_regions_mask_tf'])
         for _, row in valid_interactions.iterrows():
             cif_num = int(row['Residue_B'].split(':')[0])
             interface_list[cif_num-1] = True
