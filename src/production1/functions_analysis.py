@@ -362,6 +362,10 @@ def annotate_AF_metrics(report_df: pd.DataFrame, results_dir: str) -> pd.DataFra
     report_df['job_name'] = report_df['job_name'].apply(lambda x: str(x).lower() if not pd.isna(x) else x)
     results_df = pd.DataFrame(data=find_summary_files([results_dir]))
     results_df = clean_results(results_df)
+    results_df['interface_pae_max'] = results_df['chain_pair_pae_min'].apply(lambda c: max([c[0][1], c[1][0]]))
+    results_df['interface_pae_min'] = results_df['chain_pair_pae_min'].apply(lambda c: min([c[0][1], c[1][0]]))
+    results_df['chain_pair_iptm_max'] = results_df['chain_pair_iptm'].apply(lambda c: max([c[0][0], c[1][1]]))
+    results_df['chain_pair_iptm_min'] = results_df['chain_pair_iptm'].apply(lambda c: min([c[0][0], c[1][1]]))
 
     report_df = report_df.merge(results_df, on='job_name')
 
