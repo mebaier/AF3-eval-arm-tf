@@ -336,3 +336,89 @@ def get_pdb_chains_to_uniprot(pdb_id: str, cache_dir: str = ".pdb_cache") -> Dic
         json.dump(mapping, f)
 
     return mapping
+
+def fetch_all_pdb_results(query_body, api_url="https://search.rcsb.org/rcsbsearch/v2/query", max_rows=10000, verbose=True):
+    """
+    Fetch all PDB results from a given query body using pagination.
+    
+    Parameters:
+    - query_body (dict): The complete query body for the RCSB PDB API
+    - api_url (str): The API endpoint URL (default: PDB_SEARCH_URL)
+    - max_rows (int): Maximum rows per API request (default: 10000, which is API max)
+    - verbose (bool): Whether to print progress information
+    
+    Returns:
+    - pandas.DataFrame: DataFrame containing all results with their scores and identifiers
+    """
+    all_results = []
+    start = 0
+    
+    # Make a copy of the query body to avoid modifying the original
+    body = query_body.copy()
+    
+    # Ensure pagination is set for the first request
+    if "request_options" not in body:
+        body["request_options"] = {}
+    body["request_options"]["paginate"] = {"start": start, "rows": max_rows}
+    
+    # First request to get total count
+    response = requests.post(url=api_url, json=body)
+    
+    if response.status_code != 200:
+        if verbose:
+            print(f"Error: {response.status_code}")
+            print(response.text)
+        return pd.DataFrame()
+    
+    result = response.json()
+    total_count = result.get("total_count", 0)
+    
+    if verbose:
+        print(f"Total results to fetch: {total_count:,}")
+    
+    if total_count == 0:
+        return pd.DataFrame()
+    
+    # Calculate number of requests needed
+    num_requests = (total_count + max_rows - 1) // max_rows  # Ceiling division
+    
+    if verbose:
+        print(f"Will make {num_requests} requests to fetch all data")
+    
+    # Fetch all results
+    for request_num in range(num_requests):
+        start = request_num * max_rows
+        body["request_options"]["paginate"] = {"start": start, "rows": max_rows}
+        
+        if verbose:
+            print(f"Fetching batch {request_num + 1}/{num_requests} (starting from {start:,})")
+        
+        response = requests.post(url=api_url, json=body)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if "result_set" in result:
+                all_results.extend(result["result_set"])
+                if verbose:
+                    print(f"  ✓ Retrieved {len(result['result_set']):,} entries")
+            else:
+                if verbose:
+                    print("  ✗ No result_set in response")
+        else:
+            if verbose:
+                print(f"  ✗ Error in batch {request_num + 1}: {response.status_code}")
+                print(f"  {response.text}")
+            break
+    
+    if verbose:
+        print(f"\nTotal entries retrieved: {len(all_results):,}")
+    
+    # Convert to DataFrame
+    if all_results:
+        df = pd.DataFrame(all_results)
+        if verbose:
+            print(f"DataFrame created with shape: {df.shape}")
+            print(f"Columns: {list(df.columns)}")
+        return df
+    else:
+        return pd.DataFrame()
